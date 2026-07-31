@@ -1,0 +1,71 @@
+{
+  "spend_rows": [
+    {"spend": 100, "data_as_of": "2026-07-29T09:00:00Z"},
+    {"spend": 200, "data_as_of": "2026-07-29T08:00:00Z"}
+  ],
+  "lead_rows": [
+    {"lead_id": "lead-001", "score": 20, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-002", "score": 31, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-003", "score": 61, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-004", "score": 80, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-005", "score": null, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-006", "score": 50, "data_as_of": "2026-07-29T10:00:00Z"}
+  ],
+  "booking_rows": [
+    {"lead_id": "lead-002", "booked": true, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-003", "booked": true, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-004", "booked": true, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-006", "booked": false, "data_as_of": "2026-07-29T10:00:00Z"}
+  ],
+  "deal_rows": [
+    {"lead_id": "lead-003", "status": "closed_won", "contract_value": 500, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-004", "status": "closed_won", "contract_value": 400, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-006", "status": "closed_lost", "contract_value": 1000, "data_as_of": "2026-07-29T10:00:00Z"}
+  ],
+  "transition_rows": [
+    {"lead_id": "lead-001", "from_stage": "new", "to_stage": "disqualified", "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-002", "from_stage": "new", "to_stage": "mql", "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-003", "from_stage": "new", "to_stage": "mql", "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-004", "from_stage": "new", "to_stage": "mql", "data_as_of": "2026-07-29T10:00:00Z"}
+  ],
+  "contact_rows": [
+    {
+      "lead_id": "lead-002",
+      "submitted_at": "2026-07-28T10:00:00Z",
+      "first_contact_at": "2026-07-28T10:04:00Z",
+      "replied_at": "2026-07-28T11:00:00Z",
+      "data_as_of": "2026-07-29T10:00:00Z"
+    },
+    {
+      "lead_id": "lead-003",
+      "submitted_at": "2026-07-28T11:00:00Z",
+      "first_contact_at": "2026-07-28T11:06:00Z",
+      "replied_at": "2026-07-31T11:06:00Z",
+      "data_as_of": "2026-07-29T10:00:00Z"
+    },
+    {
+      "lead_id": "lead-004",
+      "submitted_at": "2026-07-28T12:00:00Z",
+      "first_contact_at": "2026-07-28T12:05:00Z",
+      "replied_at": "2026-07-29T12:05:00Z",
+      "data_as_of": "2026-07-29T10:00:00Z"
+    }
+  ],
+  "meeting_rows": [
+    {"lead_id": "lead-002", "booked": true, "showed": true, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-003", "booked": true, "showed": false, "data_as_of": "2026-07-29T10:00:00Z"},
+    {"lead_id": "lead-004", "booked": true, "showed": true, "data_as_of": "2026-07-29T10:00:00Z"}
+  ],
+  "expected": {
+    "cpl": {"value": 50.0, "numerator": 300.0, "denominator": 6.0, "data_as_of": "2026-07-29T08:00:00Z"},
+    "cpq": {"value": 75.0, "numerator": 300.0, "denominator": 4.0, "data_as_of": "2026-07-29T08:00:00Z"},
+    "cpql": {"value": 150.0, "numerator": 300.0, "denominator": 2.0, "data_as_of": "2026-07-29T08:00:00Z"},
+    "cpbd": {"value": 100.0, "numerator": 300.0, "denominator": 3.0, "data_as_of": "2026-07-29T08:00:00Z"},
+    "roas": {"value": 3.0, "numerator": 900.0, "denominator": 300.0, "data_as_of": "2026-07-29T08:00:00Z"},
+    "stage_conversion_rate": {"value": 75.0, "numerator": 3.0, "denominator": 4.0, "data_as_of": "2026-07-29T10:00:00Z"},
+    "time_to_first_contact": {"value": 5.0, "numerator": 15.0, "denominator": 3.0, "data_as_of": "2026-07-29T10:00:00Z"},
+    "response_rate": {"value": 66.6666666667, "numerator": 2.0, "denominator": 3.0, "data_as_of": "2026-07-29T10:00:00Z"},
+    "meeting_show_rate": {"value": 66.6666666667, "numerator": 2.0, "denominator": 3.0, "data_as_of": "2026-07-29T10:00:00Z"}
+  }
+}
+

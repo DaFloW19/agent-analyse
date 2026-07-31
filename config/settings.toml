@@ -1,0 +1,16 @@
+[default]
+database_url = "postgresql+psycopg://user:password@localhost:5432/agent_analyse"
+
+[default.analyst]
+client_id = "demo-real-estate"
+model = "mock-model"
+
+[development]
+
+[testing]
+database_url = "sqlite+pysqlite:///:memory:"
+
+[testing.analyst]
+client_id = "test-client"
+model = "mock-model"
+
