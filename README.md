@@ -21,7 +21,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn agents.analyst.main:app --reload
 ```
 
-Run the Phase A Telegram bot with:
+Run the Phase B Telegram bot with:
 
 ```powershell
 python -m agents.analyst.telegram_bot
@@ -33,6 +33,6 @@ python -m agents.analyst.telegram_bot
 .\.venv\Scripts\python -m pytest
 ```
 
-## Phase A Logs
+## Phase B Logs
 
 Analyst local logs are append-only JSONL at `logs/analyst.jsonl`. Runtime log files are ignored by Git.

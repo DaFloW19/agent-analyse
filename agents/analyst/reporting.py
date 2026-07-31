@@ -1,4 +1,4 @@
-"""Phase A hardcoded reporting helpers for the Analyst."""
+"""Phase B hardcoded reporting helpers for the Analyst."""
 
 from agents.analyst import demo_data
 from common import metrics
@@ -30,7 +30,7 @@ KPI_UNITS = {
 
 
 def build_phase_a_report() -> dict[str, dict[str, float | str | None]]:
-    """Build the Phase A KPI report from hardcoded local demo data.
+    """Build the Phase B KPI report from hardcoded local demo data.
 
     Returns:
         dict[str, dict[str, float | str | None]]: Nine canonical KPI results.
@@ -63,7 +63,7 @@ def format_report_for_telegram(report: dict[str, dict[str, float | str | None]])
         str: Human-readable report text.
     """
 
-    lines = ["Analyst Phase A Report", "Client: demo-real-estate", ""]
+    lines = ["Analyst Phase B Report", "Client: demo-real-estate", ""]
     for metric_name, result in report.items():
         label = KPI_LABELS.get(metric_name, metric_name)
         rendered_value = _format_metric_value(metric_name, result["value"])
@@ -112,7 +112,7 @@ def build_conversion_drop_alerts(
 
 
 def build_phase_a_alerts() -> list[dict[str, float | int | str]]:
-    """Build Phase A conversion-drop alerts from hardcoded weekly demo data.
+    """Build Phase B conversion-drop alerts from hardcoded weekly demo data.
 
     Returns:
         list[dict[str, float | int | str]]: Alerts for conversion drops above 50%.
@@ -179,7 +179,7 @@ def format_weekly_report_for_telegram(
 
 
 def _format_metric_value(metric_name: str, value: float | str | None) -> str:
-    """Render a KPI value with the expected Phase A unit.
+    """Render a KPI value with the expected Phase B unit.
 
     Args:
         metric_name: Canonical KPI key.

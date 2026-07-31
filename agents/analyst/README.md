@@ -22,7 +22,7 @@ The Analyst is the observation and performance intelligence agent. It studies hi
 
 ## Current Phase
 
-Bootstrap toward Phase A. The current implementation exposes a health endpoint and a side-effect-free binome observation endpoint.
+Bootstrap toward Phase B. The current implementation exposes a health endpoint and a side-effect-free binome observation endpoint.
 
 ## Running The Agent
 
@@ -38,7 +38,7 @@ Set `TELEGRAM_BOT_TOKEN` in `.env`, then run:
 python -m agents.analyst.telegram_bot
 ```
 
-Phase A commands:
+Phase B commands:
 
 ```text
 /start

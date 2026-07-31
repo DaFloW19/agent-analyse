@@ -106,7 +106,7 @@ Three things block everything else. Do them first, in this order:
 
 | Gate   | Date       | Must be true                                                                                                                                                                      |
 | ------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **G1** | Fri Aug 1  | SETUP-01/02/03 merged. ANA-02 merged and passing its fixture. Analyst Phase A done: log audit complete, central log store ingesting from all 6 agents. First VPS deploy by Dev A. |
+| **G1** | Fri Aug 1  | SETUP-01/02/03 merged. ANA-02 merged and passing its fixture. Analyst Phase B done: log audit complete, central log store ingesting from all 6 agents. First VPS deploy by Dev A. |
 | **G2** | Tue Aug 5  | Analyst Phase B complete and reporting. Roughly half the hardening tickets merged and signed off.                                                                                 |
 | **G3** | Fri Aug 8  | All 21 hardening tickets merged and signed off. Analyst Phase C code-complete.                                                                                                    |
 | **G4** | Sun Aug 10 | Single VPS deployment updated and running. Full end-to-end run on seeded data passes. All READMEs and CHANGELOGs current.                                                         |
@@ -122,7 +122,7 @@ Three things block everything else. Do them first, in this order:
 | SETUP-02 Dynaconf config                                        | ANA-03 anomaly floor + freshness                                     |
 | ANA-01 click IDs and UTMs                                       | Analyst Phase B — reporting, alerts, Langfuse                        |
 | ANA-02 metrics module                                           | Analyst Phase C — Qualifier calibration, A/B conclusions, eval suite |
-| Analyst Phase A — log audit + log store                         | Qualifier: QUA-01, QUA-02, QUA-03                                    |
+| Analyst Phase B — log audit + log store                         | Qualifier: QUA-01, QUA-02, QUA-03                                    |
 | Analyst Phase B — data pull, attribution, landing pages         | Content Strategist: CCS-01, CCS-02, CCS-03                           |
 | Analyst Phase C — Conversion API push, predictive ROAS, cohorts | Closer: CLO-01, CLO-02, CLO-03                                       |
 | Commander: CMD-01, CMD-02, CMD-03                               |                                                                      |
@@ -171,9 +171,9 @@ New tables (empty, populated by their own tickets): `processed_events`, `failed_
 
 ---
 
-### 7.1 Phase A — audit and log store (Dev A, 8h)
+### 7.1 Phase B — audit and log store (Dev A, 8h)
 
-The Analyst has no active logic in Phase A. Its job is making sure everything else is measurable.
+The Analyst has no active logic in Phase B. Its job is making sure everything else is measurable.
 
 **Build.**
 
@@ -397,7 +397,7 @@ Test: escalate a lead mid-sequence → sequence pauses, position preserved, next
 Tick every line before saying it is finished.
 
 - [ ] All 21 hardening tickets merged, each approved by that agent's original dev.
-- [ ] Analyst at Phase C: Phase A audit done, all 7 Phase B features working, all 6 Phase C features working.
+- [ ] Analyst at Phase C: Phase B audit done, all 7 Phase B features working, all 6 Phase C features working.
 - [ ] `common/metrics.py` is the only place any KPI is calculated. Fixture suite green.
 - [ ] All 7 agents write to `agent_logs` in the mandatory format, and emit Langfuse events.
 - [ ] Langfuse shows active eval jobs for all 7 agents.

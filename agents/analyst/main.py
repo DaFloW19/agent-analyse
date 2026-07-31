@@ -64,12 +64,12 @@ def observe_task(request: ObservationRequest) -> ObservationResponse:
 
 @app.get("/report", response_model=ReportResponse)
 def report() -> ReportResponse:
-    """Return a Phase A KPI report from hardcoded demo data."""
+    """Return a Phase B KPI report from hardcoded demo data."""
 
     return ReportResponse(
         agent_name="analyst",
         status="ok",
         client_id=settings.analyst.client_id,
         metrics=build_phase_a_report(),
-        message="Phase A report generated from local hardcoded demo data.",
+        message="Phase B report generated from local hardcoded demo data.",
     )

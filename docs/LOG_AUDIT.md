@@ -1,6 +1,6 @@
 # Log Audit
 
-Phase A audit of mandatory local JSON logging.
+Phase B audit of mandatory local JSON logging.
 
 | Agent | agent_name | action_type | input_summary | output_summary | lead_id | client_id | model_used | latency_ms | timestamp | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -10,10 +10,10 @@ Phase A audit of mandatory local JSON logging.
 | Content Strategist | missing | missing | missing | missing | missing | missing | missing | missing | missing | Not built |
 | Media Buyer | missing | missing | missing | missing | missing | missing | missing | missing | missing | Not built |
 | Closer | missing | missing | missing | missing | missing | missing | missing | missing | missing | Not built |
-| Analyst | pass | pass | pass | pass | pass | pass | pass | pass | pass | Phase A local JSONL implemented |
+| Analyst | pass | pass | pass | pass | pass | pass | pass | pass | pass | Phase B local JSONL implemented |
 
 ## Notes
 
 - Analyst logs are written locally to `logs/analyst.jsonl`.
-- Missing agents will move from `missing` to `pass` only after their Phase A actions write the mandatory format.
+- Missing agents will move from `missing` to `pass` only after their Phase B actions write the mandatory format.
 

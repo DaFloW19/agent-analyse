@@ -1,4 +1,4 @@
-"""Hardcoded Phase A data for the Analyst report endpoint."""
+"""Hardcoded Phase B data for the Analyst report endpoint."""
 
 SPEND_ROWS = [
     {"spend": 100, "data_as_of": "2026-07-29T09:00:00Z"},

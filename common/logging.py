@@ -44,7 +44,7 @@ def log_action(
         output_summary: Brief description of what the agent produced.
         lead_id: Lead identifier, or None for non-lead-specific actions.
         client_id: Client identifier.
-        model_used: Model name, or `rule-based` for hardcoded Phase A logic.
+        model_used: Model name, or `rule-based` for hardcoded Phase B logic.
         latency_ms: Total action latency in milliseconds.
         timestamp: ISO 8601 timestamp. Generated in UTC when omitted.
         path: JSONL destination path.
@@ -81,7 +81,7 @@ def log_action(
 
 
 def validate_log_entry(entry: dict[str, Any]) -> None:
-    """Validate that a log entry contains the mandatory Phase A fields.
+    """Validate that a log entry contains the mandatory Phase B fields.
 
     Args:
         entry: Log entry to validate.

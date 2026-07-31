@@ -97,7 +97,7 @@ class ParsedObserveCommand:
 
 
 def parse_observe_command(text: str) -> ParsedObserveCommand:
-    """Parse a Phase A `/observe` Telegram command.
+    """Parse a Phase B `/observe` Telegram command.
 
     Args:
         text: Full Telegram command text.
@@ -146,7 +146,7 @@ def handle_text_command(
         text: Incoming Telegram command.
         analyst_agent: Analyst agent instance. A default instance is created when omitted.
         client_id: Client identifier. Defaults to Dynaconf Analyst client id.
-        log_path: Local JSONL path for Phase A logs.
+        log_path: Local JSONL path for Phase B logs.
 
     Returns:
         str: Telegram-ready response text.
@@ -207,12 +207,12 @@ def build_help_message() -> str:
     """
 
     return (
-        "Analyst Agent Phase A is active.\n\n"
+        "Analyst Agent Phase B is active.\n\n"
         "Commands:\n"
         "/start - Show this message\n"
         "/help - Show this message\n"
         "/health - Check Analyst status\n"
-        "/report - Show the Phase A KPI report\n"
+        "/report - Show the Phase B KPI report\n"
         "/weekly_report - Show weekly KPIs and alerts\n"
         "/alerts - Check conversion drops above 50%\n"
         "/observe <agent_name> - Observe one agent\n"

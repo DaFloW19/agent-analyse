@@ -1,4 +1,4 @@
-"""Telegram long-polling entrypoint for the Analyst Phase A bot."""
+"""Telegram long-polling entrypoint for the Analyst Phase B bot."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def build_command_menu() -> list[BotCommand]:
         BotCommand("start", "Start the Analyst bot"),
         BotCommand("help", "Show available commands"),
         BotCommand("health", "Check Analyst status"),
-        BotCommand("report", "Show the Phase A KPI report"),
+        BotCommand("report", "Show the Phase B KPI report"),
         BotCommand("weekly_report", "Show weekly KPIs and alerts"),
         BotCommand("alerts", "Check conversion drops above 50%"),
         BotCommand("observe", "Observe another agent task"),
@@ -58,7 +58,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 def build_application() -> Application:
-    """Build the Telegram application with Phase A command handlers.
+    """Build the Telegram application with Phase B command handlers.
 
     Returns:
         Application: Configured python-telegram-bot application.

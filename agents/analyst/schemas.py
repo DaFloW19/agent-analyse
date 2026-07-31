@@ -43,7 +43,7 @@ class ObservationResponse(BaseModel):
 
 
 class ReportResponse(BaseModel):
-    """Phase A KPI report response using local demo data."""
+    """Phase B KPI report response using local demo data."""
 
     agent_name: str
     status: str

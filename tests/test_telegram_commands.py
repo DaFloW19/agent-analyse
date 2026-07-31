@@ -35,7 +35,7 @@ def test_parse_observe_command_rejects_unknown_agent():
 def test_handle_report_command_returns_phase_a_report():
     response = handle_text_command("/report", client_id="demo-real-estate")
 
-    assert "Analyst Phase A Report" in response
+    assert "Analyst Phase B Report" in response
     assert "CPL: 50.00" in response
     assert "ROAS: 3.00x" in response
     assert "Response rate: 66.67%" in response
