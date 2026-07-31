@@ -16,7 +16,7 @@ The project currently targets 7 agents:
 
 ## Development Phases
 
-### Phase B - POC
+### Phase A - POC
 
 Minimal proof that the agent works. Logic can be hardcoded, Telegram can be the first interface, and logs are append-only local JSON files.
 
