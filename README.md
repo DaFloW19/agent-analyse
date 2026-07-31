@@ -1,6 +1,6 @@
 # Agent Analyse
 
-Development repo for the 7-agent MVP, including the new Analyst agent and shared hardening work.
+Analyst agent for Marketing Project.
 
 ## Current Bootstrap
 
