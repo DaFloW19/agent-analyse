@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from agents.analyst.data_pull import pull_kpi_report
 from agents.analyst.telegram_commands import handle_text_command, parse_observe_command
 
 
@@ -34,11 +35,12 @@ def test_parse_observe_command_rejects_unknown_agent():
 
 def test_handle_report_command_returns_phase_a_report():
     response = handle_text_command("/report", client_id="demo-real-estate")
+    expected = pull_kpi_report()
 
     assert "Analyst Phase B Report" in response
-    assert "CPL: 50.00" in response
-    assert "ROAS: 3.00x" in response
-    assert "Response rate: 66.67%" in response
+    assert f"CPL: {expected['cpl']['value']:.2f}" in response
+    assert f"ROAS: {expected['roas']['value']:.2f}x" in response
+    assert f"Response rate: {expected['response_rate']['value']:.2f}%" in response
 
 
 def test_handle_start_command_lists_commands_and_agents():
@@ -64,9 +66,10 @@ def test_handle_alerts_command_returns_conversion_drop_alert():
 
 def test_handle_weekly_report_command_returns_kpis_and_alerts():
     response = handle_text_command("/weekly_report", client_id="demo-real-estate")
+    expected = pull_kpi_report()
 
     assert "Weekly Analyst Report" in response
-    assert "CPL: 50.00" in response
+    assert f"CPL: {expected['cpl']['value']:.2f}" in response
     assert "Immediate alerts: 1 conversion drop detected" in response
     assert "Alert: New to MQL" in response
 

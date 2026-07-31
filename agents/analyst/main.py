@@ -10,6 +10,7 @@ from agents.analyst.agent import AnalystAgent
 from agents.analyst.reporting import build_phase_a_report
 from agents.analyst.schemas import ObservationRequest, ObservationResponse, ReportResponse
 from common.logging import log_action
+from common.tracing import traced_action
 from config.settings import settings
 
 
@@ -45,31 +46,46 @@ def health() -> HealthResponse:
 def observe_task(request: ObservationRequest) -> ObservationResponse:
     """Observe another agent's task as the Analyst binome."""
 
-    started_at = perf_counter()
-    response = analyst_agent.observe_task(request)
-    latency_ms = int((perf_counter() - started_at) * 1000)
-    log_action(
+    with traced_action(
         agent_name="analyst",
-        action_type="observe_task",
-        input_summary=f"{request.agent_name}.{request.task_type}: {request.input_summary}",
-        output_summary=f"safe_to_continue={response.safe_to_continue}; risks={len(response.risks)}",
-        lead_id=request.lead_id,
         client_id=request.client_id,
+        phase="phase_b_observe",
         model_used="rule-based",
-        latency_ms=latency_ms,
-        path=app.state.log_path,
-    )
+        lead_id=request.lead_id,
+    ):
+        started_at = perf_counter()
+        response = analyst_agent.observe_task(request)
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        log_action(
+            agent_name="analyst",
+            action_type="observe_task",
+            input_summary=f"{request.agent_name}.{request.task_type}: {request.input_summary}",
+            output_summary=(
+                f"safe_to_continue={response.safe_to_continue}; risks={len(response.risks)}"
+            ),
+            lead_id=request.lead_id,
+            client_id=request.client_id,
+            model_used="rule-based",
+            latency_ms=latency_ms,
+            path=app.state.log_path,
+        )
     return response
 
 
 @app.get("/report", response_model=ReportResponse)
 def report() -> ReportResponse:
-    """Return a Phase B KPI report from hardcoded demo data."""
+    """Return a Phase B KPI report from the Analyst seed dataset."""
 
-    return ReportResponse(
+    with traced_action(
         agent_name="analyst",
-        status="ok",
         client_id=settings.analyst.client_id,
-        metrics=build_phase_a_report(),
-        message="Phase B report generated from local hardcoded demo data.",
-    )
+        phase="phase_b_report",
+        model_used="rule-based",
+    ):
+        return ReportResponse(
+            agent_name="analyst",
+            status="ok",
+            client_id=settings.analyst.client_id,
+            metrics=build_phase_a_report(),
+            message="Phase B report generated from the Analyst seed dataset.",
+        )

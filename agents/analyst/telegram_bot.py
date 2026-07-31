@@ -5,6 +5,7 @@ from __future__ import annotations
 from telegram import BotCommand, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
+from agents.analyst.scheduler import start_scheduler
 from agents.analyst.telegram_commands import handle_text_command
 from config.settings import settings
 
@@ -57,8 +58,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text(response)
 
 
+async def _on_startup(application: Application) -> None:
+    """Register the command menu and start the weekly optimisation report job (B6).
+
+    Args:
+        application: Configured Telegram application.
+    """
+
+    await register_command_menu(application)
+
+    async def send_to_operator(text: str) -> None:
+        """Send text to the operator's allowed Telegram chat, if configured."""
+
+        chat_id = getattr(settings, "telegram_allowed_chat_id", "") or ""
+        if chat_id:
+            await application.bot.send_message(chat_id=chat_id, text=text)
+
+    start_scheduler(send_to_operator)
+
+
 def build_application() -> Application:
     """Build the Telegram application with Phase B command handlers.
+
+    Also starts the weekly optimisation report scheduler (B6), which sends
+    every Monday at 08:00 to the allowed chat. Never called from tests, so
+    test runs never start a real scheduler.
 
     Returns:
         Application: Configured python-telegram-bot application.
@@ -71,7 +95,7 @@ def build_application() -> Application:
     if not token or token == "ton_token_ici":
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN in .env before starting the Telegram bot.")
 
-    application = Application.builder().token(token).post_init(register_command_menu).build()
+    application = Application.builder().token(token).post_init(_on_startup).build()
     application.add_handler(CommandHandler("start", handle_message))
     application.add_handler(CommandHandler("help", handle_message))
     application.add_handler(CommandHandler("health", handle_message))

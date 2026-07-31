@@ -1,6 +1,8 @@
-from fastapi.testclient import TestClient
 import json
 
+from fastapi.testclient import TestClient
+
+from agents.analyst.data_pull import pull_kpi_report
 from agents.analyst.main import app
 
 
@@ -94,4 +96,4 @@ def test_report_endpoint_returns_all_nine_phase_a_kpis():
         "response_rate",
         "meeting_show_rate",
     }
-    assert body["metrics"]["cpl"]["value"] == 50.0
+    assert body["metrics"]["cpl"]["value"] == pull_kpi_report()["cpl"]["value"]

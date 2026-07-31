@@ -1,8 +1,14 @@
-"""Phase B hardcoded reporting helpers for the Analyst."""
+"""Phase B reporting helpers for the Analyst: KPI report and anomaly alerts."""
 
-from agents.analyst import demo_data
-from common import metrics
+from __future__ import annotations
 
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from agents.analyst.data_pull import pull_kpi_report
+from agents.analyst.seed_data import load_seed_dataset
+from common.logging import log_action
+from config.settings import settings
 
 KPI_LABELS = {
     "cpl": "CPL",
@@ -30,44 +36,65 @@ KPI_UNITS = {
 
 
 def build_phase_a_report() -> dict[str, dict[str, float | str | None]]:
-    """Build the Phase B KPI report from hardcoded local demo data.
+    """Build the Phase B KPI report from the Analyst seed dataset.
 
     Returns:
         dict[str, dict[str, float | str | None]]: Nine canonical KPI results.
     """
 
-    return {
-        "cpl": metrics.cpl(demo_data.SPEND_ROWS, demo_data.LEAD_ROWS),
-        "cpq": metrics.cpq(demo_data.SPEND_ROWS, demo_data.LEAD_ROWS),
-        "cpql": metrics.cpql(demo_data.SPEND_ROWS, demo_data.LEAD_ROWS),
-        "cpbd": metrics.cpbd(demo_data.SPEND_ROWS, demo_data.BOOKING_ROWS),
-        "roas": metrics.roas(demo_data.SPEND_ROWS, demo_data.DEAL_ROWS),
-        "stage_conversion_rate": metrics.stage_conversion_rate(
-            demo_data.TRANSITION_ROWS,
-            from_stage="new",
-            to_stage="mql",
-        ),
-        "time_to_first_contact": metrics.time_to_first_contact(demo_data.CONTACT_ROWS),
-        "response_rate": metrics.response_rate(demo_data.CONTACT_ROWS),
-        "meeting_show_rate": metrics.meeting_show_rate(demo_data.MEETING_ROWS),
-    }
+    return pull_kpi_report()
+
+
+def mark_stale(
+    report: dict[str, dict[str, float | str | None]],
+    now: datetime,
+    stale_after_hours: int | None = None,
+) -> dict[str, dict[str, float | str | None]]:
+    """Flag KPI results whose source data is older than the freshness window.
+
+    Args:
+        report: KPI report returned by `build_phase_a_report`.
+        now: Reference timestamp to compare each `data_as_of` against.
+            Passed in explicitly so this function stays pure and testable
+            (never calls `datetime.now()` itself).
+        stale_after_hours: Hours after which a figure is considered stale.
+            Defaults to `settings.analyst.stale_after_hours`.
+
+    Returns:
+        dict[str, dict[str, float | str | None]]: The same report with a
+        `stale` boolean added to every KPI result. A result with no
+        `data_as_of` (no data at all) is never marked stale.
+    """
+
+    window = timedelta(hours=stale_after_hours or settings.analyst.stale_after_hours)
+    marked = {}
+    for metric_name, result in report.items():
+        data_as_of = result.get("data_as_of")
+        stale = False
+        if isinstance(data_as_of, str) and data_as_of:
+            source_time = datetime.fromisoformat(data_as_of.replace("Z", "+00:00"))
+            stale = (now - source_time) > window
+        marked[metric_name] = {**result, "stale": stale}
+    return marked
 
 
 def format_report_for_telegram(report: dict[str, dict[str, float | str | None]]) -> str:
     """Format KPI report values for a compact Telegram response.
 
     Args:
-        report: KPI report returned by `build_phase_a_report`.
+        report: KPI report returned by `build_phase_a_report`, optionally
+            passed through `mark_stale` first.
 
     Returns:
-        str: Human-readable report text.
+        str: Human-readable report text. Stale figures are flagged inline.
     """
 
-    lines = ["Analyst Phase B Report", "Client: demo-real-estate", ""]
+    lines = ["Analyst Phase B Report", f"Client: {settings.analyst.client_id}", ""]
     for metric_name, result in report.items():
         label = KPI_LABELS.get(metric_name, metric_name)
         rendered_value = _format_metric_value(metric_name, result["value"])
-        lines.append(f"{label}: {rendered_value}")
+        stale_suffix = " [stale]" if result.get("stale") else ""
+        lines.append(f"{label}: {rendered_value}{stale_suffix}")
     lines.append("")
     lines.append(f"Data as of: {_oldest_report_timestamp(report)}")
     return "\n".join(lines)
@@ -75,50 +102,106 @@ def format_report_for_telegram(report: dict[str, dict[str, float | str | None]])
 
 def build_conversion_drop_alerts(
     weekly_rows: list[dict[str, float | int | str]],
-    threshold_pct: float = 50.0,
+    threshold_pct: float | None = None,
+    min_denominator: int | None = None,
+    *,
+    client_id: str | None = None,
+    log_path: str | Path = "logs/analyst.jsonl",
 ) -> list[dict[str, float | int | str]]:
     """Find stage conversion drops greater than the configured threshold.
 
+    An alert fires only when BOTH conditions hold (ANA-03): the drop exceeds
+    `threshold_pct`, AND both the previous and current period's denominator
+    are at or above `min_denominator`. A drop below the volume floor is
+    suppressed rather than alerted, and the suppression is logged with the
+    counts so it is still visible in the audit trail.
+
     Args:
-        weekly_rows: Rows with previous/current conversion rates and denominators.
+        weekly_rows: Rows with previous/current conversion rates and
+            denominators.
         threshold_pct: Percentage drop threshold that triggers an alert.
+            Defaults to `settings.analyst.anomaly_threshold_pct`.
+        min_denominator: Minimum sample size required in both periods.
+            Defaults to `settings.analyst.anomaly_min_denominator`.
+        client_id: Client identifier for suppression logs. Defaults to
+            `settings.analyst.client_id`.
+        log_path: JSONL destination for suppression log entries.
 
     Returns:
-        list[dict[str, float | int | str]]: Alert rows for transitions breaching the threshold.
+        list[dict[str, float | int | str]]: Alert rows for transitions
+        breaching the threshold at or above the volume floor.
     """
+
+    active_threshold = (
+        threshold_pct if threshold_pct is not None else settings.analyst.anomaly_threshold_pct
+    )
+    active_floor = (
+        min_denominator if min_denominator is not None else settings.analyst.anomaly_min_denominator
+    )
+    active_client_id = client_id or settings.analyst.client_id
 
     alerts = []
     for row in weekly_rows:
         previous_rate = float(row["previous_rate"])
         current_rate = float(row["current_rate"])
+        previous_denominator = int(row["previous_denominator"])
+        current_denominator = int(row["current_denominator"])
         if previous_rate == 0:
             continue
 
         drop_pct = ((previous_rate - current_rate) / previous_rate) * 100
-        if drop_pct > threshold_pct:
-            alerts.append(
-                {
-                    "transition": row["transition"],
-                    "label": row["label"],
-                    "previous_rate": previous_rate,
-                    "current_rate": current_rate,
-                    "drop_pct": drop_pct,
-                    "previous_denominator": int(row["previous_denominator"]),
-                    "current_denominator": int(row["current_denominator"]),
-                    "data_as_of": row["data_as_of"],
-                }
+        if drop_pct <= active_threshold:
+            continue
+
+        if previous_denominator < active_floor or current_denominator < active_floor:
+            log_action(
+                agent_name="analyst",
+                action_type="suppress_anomaly_alert",
+                input_summary=(
+                    f"{row['transition']}: drop {drop_pct:.2f}% exceeds threshold "
+                    f"but below volume floor {active_floor}"
+                ),
+                output_summary=(
+                    f"previous_denominator={previous_denominator}, "
+                    f"current_denominator={current_denominator}"
+                ),
+                lead_id=None,
+                client_id=active_client_id,
+                model_used="rule-based",
+                latency_ms=0,
+                path=log_path,
             )
+            continue
+
+        alerts.append(
+            {
+                "transition": row["transition"],
+                "label": row["label"],
+                "previous_rate": previous_rate,
+                "current_rate": current_rate,
+                "drop_pct": drop_pct,
+                "previous_denominator": previous_denominator,
+                "current_denominator": current_denominator,
+                "data_as_of": row["data_as_of"],
+            }
+        )
     return alerts
 
 
-def build_phase_a_alerts() -> list[dict[str, float | int | str]]:
-    """Build Phase B conversion-drop alerts from hardcoded weekly demo data.
+def build_phase_a_alerts(client_id: str | None = None) -> list[dict[str, float | int | str]]:
+    """Build Phase B conversion-drop alerts from the Analyst seed dataset.
+
+    Args:
+        client_id: Client identifier for suppression logs. Defaults to
+            `settings.analyst.client_id`.
 
     Returns:
-        list[dict[str, float | int | str]]: Alerts for conversion drops above 50%.
+        list[dict[str, float | int | str]]: Alerts above the drop threshold
+        and at or above the ANA-03 volume floor.
     """
 
-    return build_conversion_drop_alerts(demo_data.WEEKLY_STAGE_CONVERSION_ROWS)
+    dataset = load_seed_dataset()
+    return build_conversion_drop_alerts(dataset.weekly_stage_conversion_rows, client_id=client_id)
 
 
 def format_alerts_for_telegram(alerts: list[dict[str, float | int | str]]) -> str:
@@ -132,7 +215,10 @@ def format_alerts_for_telegram(alerts: list[dict[str, float | int | str]]) -> st
     """
 
     if not alerts:
-        return "Conversion Alerts\n\nNo conversion drop above 50% detected."
+        return (
+            "Conversion Alerts\n\n"
+            "No conversion drop above the alert threshold and volume floor detected."
+        )
 
     lines = ["Conversion Alerts", ""]
     for alert in alerts:

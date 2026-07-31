@@ -10,10 +10,11 @@ Phase B audit of mandatory local JSON logging.
 | Content Strategist | missing | missing | missing | missing | missing | missing | missing | missing | missing | Not built |
 | Media Buyer | missing | missing | missing | missing | missing | missing | missing | missing | missing | Not built |
 | Closer | missing | missing | missing | missing | missing | missing | missing | missing | missing | Not built |
-| Analyst | pass | pass | pass | pass | pass | pass | pass | pass | pass | Phase B local JSONL implemented |
+| Analyst | pass | pass | pass | pass | pass | pass | pass | pass | pass | Local JSONL + central `agent_logs` store implemented |
 
 ## Notes
 
-- Analyst logs are written locally to `logs/analyst.jsonl`.
+- Analyst logs are written locally to `logs/analyst.jsonl` and dual-written to the central `agent_logs` table (`common/db.py`) when the database is reachable. A database outage never blocks or crashes the agent; the failure itself is appended to the local JSONL file.
+- No live Postgres server was available in this dev environment; the central store is implemented and tested against an in-memory SQLite database (`tests/conftest.py`), not yet validated against a real Postgres instance.
 - Missing agents will move from `missing` to `pass` only after their Phase B actions write the mandatory format.
 

@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
 MANDATORY_LOG_FIELDS = [
     "agent_name",
     "action_type",
@@ -73,11 +72,55 @@ def log_action(
         entry.update(extra_fields)
 
     validate_log_entry(entry)
+    _write_jsonl(entry, path)
+    _write_to_central_store(entry, path)
+    return entry
+
+
+def _write_jsonl(entry: dict[str, Any], path: str | Path) -> None:
+    """Append one log entry to the local append-only JSONL file.
+
+    Args:
+        entry: Log entry to write. Must already be validated.
+        path: JSONL destination path.
+    """
+
     log_path = Path(path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as log_file:
         log_file.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
-    return entry
+
+
+def _write_to_central_store(entry: dict[str, Any], path: str | Path) -> None:
+    """Best-effort dual-write of one log entry to the central `agent_logs` table.
+
+    Never raises: a database outage must not stop an agent from logging or
+    running (Phase B rule: keep writing the local file, no crash). On
+    failure, the failure itself is appended to the local JSONL file so it
+    stays visible in the audit trail.
+
+    Args:
+        entry: Log entry already written to the local JSONL file.
+        path: JSONL destination path, reused for the failure entry.
+    """
+
+    from common.db import (
+        write_agent_log,  # local import: log_action stays usable with no DB configured
+    )
+
+    try:
+        write_agent_log(entry)
+    except Exception as exc:  # noqa: BLE001 - a DB outage must never crash the caller
+        _write_jsonl(
+            {
+                **entry,
+                "action_type": "central_log_write_failed",
+                "db_write_failed": True,
+                "error_type": type(exc).__name__,
+                "error_message": str(exc),
+            },
+            path,
+        )
 
 
 def validate_log_entry(entry: dict[str, Any]) -> None:

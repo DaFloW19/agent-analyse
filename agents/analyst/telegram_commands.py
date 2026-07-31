@@ -16,8 +16,8 @@ from agents.analyst.reporting import (
 )
 from agents.analyst.schemas import KnownAgentName, ObservationRequest
 from common.logging import log_action
+from common.tracing import traced_action
 from config.settings import settings
-
 
 AGENT_LABELS = {
     "commander": "Commander",
@@ -163,17 +163,36 @@ def handle_text_command(
         return f"Analyst health: ok\nclient_id: {active_client_id}"
 
     if command == "/report":
-        return format_report_for_telegram(build_phase_a_report())
+        with traced_action(
+            agent_name="analyst",
+            client_id=active_client_id,
+            phase="phase_b_report",
+            model_used="rule-based",
+        ):
+            return format_report_for_telegram(build_phase_a_report())
 
     if command == "/weekly_report":
-        return format_weekly_report_for_telegram(build_phase_a_report(), build_phase_a_alerts())
+        with traced_action(
+            agent_name="analyst",
+            client_id=active_client_id,
+            phase="phase_b_weekly_report",
+            model_used="rule-based",
+        ):
+            report = build_phase_a_report()
+            alerts = build_phase_a_alerts(active_client_id)
+            return format_weekly_report_for_telegram(report, alerts)
 
     if command == "/alerts":
-        return format_alerts_for_telegram(build_phase_a_alerts())
+        with traced_action(
+            agent_name="analyst",
+            client_id=active_client_id,
+            phase="phase_b_alerts",
+            model_used="rule-based",
+        ):
+            return format_alerts_for_telegram(build_phase_a_alerts(active_client_id))
 
     if command.startswith("/observe"):
         parsed = parse_observe_command(command)
-        started_at = perf_counter()
         request = ObservationRequest(
             client_id=active_client_id,
             agent_name=parsed.agent_name,
@@ -181,19 +200,29 @@ def handle_text_command(
             input_summary=f"Telegram observe command for {parsed.agent_name}.{parsed.task_type}",
             data_points=parsed.data_points,
         )
-        response = agent.observe_task(request)
-        latency_ms = int((perf_counter() - started_at) * 1000)
-        log_action(
+        with traced_action(
             agent_name="analyst",
-            action_type="telegram_observe",
-            input_summary=f"{request.agent_name}.{request.task_type}",
-            output_summary=f"safe_to_continue={response.safe_to_continue}; risks={len(response.risks)}",
-            lead_id=request.lead_id,
-            client_id=request.client_id,
+            client_id=active_client_id,
+            phase="phase_b_observe",
             model_used="rule-based",
-            latency_ms=latency_ms,
-            path=log_path,
-        )
+            lead_id=request.lead_id,
+        ):
+            started_at = perf_counter()
+            response = agent.observe_task(request)
+            latency_ms = int((perf_counter() - started_at) * 1000)
+            log_action(
+                agent_name="analyst",
+                action_type="telegram_observe",
+                input_summary=f"{request.agent_name}.{request.task_type}",
+                output_summary=(
+                    f"safe_to_continue={response.safe_to_continue}; risks={len(response.risks)}"
+                ),
+                lead_id=request.lead_id,
+                client_id=request.client_id,
+                model_used="rule-based",
+                latency_ms=latency_ms,
+                path=log_path,
+            )
         return format_observation_for_telegram(response)
 
     return "Unknown command. Use /help."
@@ -254,7 +283,8 @@ def format_observation_for_telegram(response: Any) -> str:
 
     if response.safe_to_continue:
         recommendation = (
-            f"{agent_label} can continue. Track the listed KPIs and confirm the guardrails before any execution."
+            f"{agent_label} can continue. Track the listed KPIs and confirm the guardrails "
+            "before any execution."
         )
     else:
         recommendation = "Pause execution and route this through Commander review."

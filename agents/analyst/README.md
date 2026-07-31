@@ -6,11 +6,14 @@ The Analyst is the observation and performance intelligence agent. It studies hi
 
 - Audit all agent logs against the mandatory schema.
 - Calculate funnel and performance KPIs through the shared metrics module.
-- Produce KPI reports with week-on-week changes.
-- Detect anomalies and stale data.
-- Analyse campaign, ad set, asset, landing page, cohort, and scoring performance.
+- Produce KPI reports with week-on-week freshness (`data_as_of`, staleness flag).
+- Break down CPL/CPQ/CPQL by campaign, ad set, and creative asset (B2), never dropping unattributed leads.
+- Flag landing pages below the 15% visitor-to-form threshold (B3).
+- Detect stage-conversion anomalies, subject to a minimum sample-size floor so ordinary variance never fires an alert (B5/ANA-03).
+- Generate a weekly optimisation report with concrete, evidence-backed recommendations every Monday (B6). It only recommends — it never executes.
 - Act as an observation binome when another agent is called for a task.
-- Drive Langfuse tracing and evaluation review.
+- Trace every action through Langfuse when configured; run as a clean no-op otherwise (B7).
+- Dual-write every logged action to a local JSONL file and the central `agent_logs` table, without ever crashing or blocking if the database is unreachable.
 
 ## What This Agent Does Not Do
 
@@ -20,17 +23,31 @@ The Analyst is the observation and performance intelligence agent. It studies hi
 - It does not publish content.
 - It does not bypass Commander approval or specialist guardrails.
 
+## Setup
+
+```powershell
+python -m pip install -e ".[dev]"
+copy .env.example .env  # fill in TELEGRAM_BOT_TOKEN at minimum
+```
+
+## Environment variables
+
+See the root `.env.example` for the full list (`ANALYST_CLIENT_ID`, `TELEGRAM_BOT_TOKEN`, `LANGFUSE_*`, `DATABASE_URL`, ...).
+
 ## Current Phase
 
-Bootstrap toward Phase B. The current implementation exposes a health endpoint and a side-effect-free binome observation endpoint.
+Phase B, mostly complete for the Analyst:
 
-## Running The Agent
+- Done: log audit (Phase A), KPI report, weekly report + alerts, attribution breakdown (B2), landing page performance (B3), anomaly volume floor + data freshness (B5/ANA-03), weekly optimisation report scheduler (B6), Langfuse tracing (B7), central `agent_logs` store with local-JSONL fallback.
+- Not started: Phase C (predictive feedback loop, Qualifier calibration, A/B conclusions, full eval suite).
+
+## Running the agent
 
 ```powershell
 python -m uvicorn agents.analyst.main:app --reload
 ```
 
-## Running The Telegram Bot
+## Running the Telegram bot
 
 Set `TELEGRAM_BOT_TOKEN` in `.env`, then run:
 
@@ -38,25 +55,39 @@ Set `TELEGRAM_BOT_TOKEN` in `.env`, then run:
 python -m agents.analyst.telegram_bot
 ```
 
-Phase B commands:
+Starting the bot also starts the weekly optimisation report job (every Monday 08:00), which sends to `TELEGRAM_ALLOWED_CHAT_ID` if set.
+
+Commands:
 
 ```text
 /start
+/help
 /health
 /report
+/weekly_report
+/alerts
 /observe media_buyer
 /observe media_buyer pause_ad_set conversions=6 dry_run=true
 ```
 
-## Running Tests
+## Running tests
 
 ```powershell
 python -m pytest
 ```
 
-## Inputs And Outputs
+Tests always run against an in-memory SQLite database (see `tests/conftest.py`), never a real Postgres server.
 
-### Observation Input
+## Known limitations
+
+- Phase C is not started.
+- No live Postgres server was available in this dev environment; the central log store is implemented and tested against SQLite, but has not been validated against a real Postgres instance. Run `python -m scripts.init_db` against a real `DATABASE_URL` before relying on it in production.
+- The seed dataset (`agents/analyst/seed_data.py`) stands in for real CRM/ad-platform data. Swapping in real data sources is a Phase C concern (data pull layer already isolates KPI arithmetic from data shape).
+- The weekly optimisation report's "scale"/"pause" recommendations are based on CPQL only; richer criteria (statistical confidence, minimum conversions) are Phase C (MB-03-equivalent) work.
+
+## Inputs and outputs
+
+### Observation input
 
 The Analyst receives a structured task summary from another agent:
 
@@ -75,6 +106,10 @@ The Analyst receives a structured task summary from another agent:
 }
 ```
 
-### Observation Output
+### Observation output
 
 The Analyst returns KPI, guardrail, logging, risk, and recommendation context. It does not execute the task.
+
+### KPI report output
+
+`GET /report` and `/report` (Telegram) return the nine canonical KPIs, each as `{value, numerator, denominator, data_as_of}`, computed from the seed dataset via `agents/analyst/data_pull.py` and `common/metrics.py`.

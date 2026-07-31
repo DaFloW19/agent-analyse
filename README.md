@@ -11,7 +11,9 @@ Analyst agent for Marketing Project.
 - `tests/`: automated tests.
 - `docs/ANALYST_AGENT_WORK_PLAN.md`: implementation plan.
 - `common/metrics.py`: canonical KPI and statistical helper module.
-- `common/logging.py`: mandatory local JSONL logging helper.
+- `common/logging.py`: mandatory local JSONL logging helper, dual-writing to `common/db.py`'s central `agent_logs` table.
+- `common/tracing.py`: no-op-safe Langfuse tracing wrapper.
+- `scripts/init_db.py`: one-shot script to provision the central log store schema (`python -m scripts.init_db`).
 
 ## Local Run
 
