@@ -14,6 +14,7 @@ from agents.analyst.reporting import (
     format_report_for_telegram,
     format_weekly_report_for_telegram,
 )
+from agents.analyst.scheduler import build_weekly_optimisation_report
 from agents.analyst.schemas import KnownAgentName, ObservationRequest
 from common.logging import log_action
 from common.tracing import traced_action
@@ -191,6 +192,15 @@ def handle_text_command(
         ):
             return format_alerts_for_telegram(build_phase_a_alerts(active_client_id))
 
+    if command == "/optimisation_report":
+        with traced_action(
+            agent_name="analyst",
+            client_id=active_client_id,
+            phase="phase_b_optimisation_report",
+            model_used="rule-based",
+        ):
+            return build_weekly_optimisation_report(active_client_id)
+
     if command.startswith("/observe"):
         parsed = parse_observe_command(command)
         request = ObservationRequest(
@@ -244,6 +254,8 @@ def build_help_message() -> str:
         "/report - Show the Phase B KPI report\n"
         "/weekly_report - Show weekly KPIs and alerts\n"
         "/alerts - Check conversion drops above 50%\n"
+        "/optimisation_report - Preview the weekly scale/pause/rewrite recommendations "
+        "(normally sent automatically every Monday)\n"
         "/observe <agent_name> - Observe one agent\n"
         "/observe <agent_name> <task_type> key=value - Observe a specific task\n\n"
         "Agents:\n"

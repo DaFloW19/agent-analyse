@@ -24,6 +24,7 @@ def build_command_menu() -> list[BotCommand]:
         BotCommand("report", "Show the Phase B KPI report"),
         BotCommand("weekly_report", "Show weekly KPIs and alerts"),
         BotCommand("alerts", "Check conversion drops above 50%"),
+        BotCommand("optimisation_report", "Preview the weekly scale/pause/rewrite recommendations"),
         BotCommand("observe", "Observe another agent task"),
     ]
 
@@ -102,6 +103,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("report", handle_message))
     application.add_handler(CommandHandler("weekly_report", handle_message))
     application.add_handler(CommandHandler("alerts", handle_message))
+    application.add_handler(CommandHandler("optimisation_report", handle_message))
     application.add_handler(CommandHandler("observe", handle_message))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     return application

@@ -12,5 +12,6 @@ def test_build_command_menu_includes_observe_command():
         "report",
         "weekly_report",
         "alerts",
+        "optimisation_report",
         "observe",
     }

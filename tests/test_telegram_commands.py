@@ -64,6 +64,15 @@ def test_handle_alerts_command_returns_conversion_drop_alert():
     assert "Action: route to Commander for immediate review." in response
 
 
+def test_handle_optimisation_report_command_returns_recommendations():
+    response = handle_text_command("/optimisation_report", client_id="demo-real-estate")
+
+    assert "Weekly Optimisation Report" in response
+    assert "Scale:" in response
+    assert "Pause:" in response
+    assert "Rewrite:" in response
+
+
 def test_handle_weekly_report_command_returns_kpis_and_alerts():
     response = handle_text_command("/weekly_report", client_id="demo-real-estate")
     expected = pull_kpi_report()
