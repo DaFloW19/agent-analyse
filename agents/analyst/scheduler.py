@@ -39,6 +39,7 @@ def build_weekly_optimisation_report(client_id: str | None = None) -> str:
     ad_set_attribution = attribution_breakdown(dataset.spend_rows, dataset.leads, "ad_set")
     campaign_attribution = attribution_breakdown(dataset.spend_rows, dataset.leads, "campaign")
     landing_pages = landing_page_performance(dataset.landing_page_rows)
+    flagged_pages = [page for page in landing_pages if page["below_threshold"]]
 
     lines = [
         "Weekly Optimisation Report (for Commander review)",
@@ -57,7 +58,68 @@ def build_weekly_optimisation_report(client_id: str | None = None) -> str:
         else "Overall ROAS: no data"
     )
     lines.append(roas_line)
+
+    summary = _generate_plain_language_summary(
+        client_id=active_client_id,
+        scale_key=_best_attributed_key(campaign_attribution),
+        pause_key=_worst_attributed_key(ad_set_attribution),
+        flagged_pages=flagged_pages,
+        overall_roas=overall_roas,
+    )
+    lines.append("")
+    lines.append("AI summary (DeepSeek):")
+    lines.append(summary or "unavailable (DeepSeek not configured or unreachable)")
+
     return "\n".join(lines)
+
+
+def _generate_plain_language_summary(
+    *,
+    client_id: str,
+    scale_key: str | None,
+    pause_key: str | None,
+    flagged_pages: list[dict],
+    overall_roas: float | None,
+) -> str | None:
+    """Ask DeepSeek for a short plain-language summary of this week's report.
+
+    Args:
+        client_id: Client identifier.
+        scale_key: Best-attributed campaign key, or None.
+        pause_key: Worst-attributed ad set key, or None.
+        flagged_pages: Landing pages below the 15% conversion threshold.
+        overall_roas: Overall ROAS value, or None when there is no data.
+
+    Returns:
+        str | None: A 2-3 sentence summary, or None when DeepSeek is not
+        configured or unreachable -- the caller must treat this exactly
+        like "no data", never crash or block on it.
+    """
+
+    from common.llm import generate_text
+
+    system_prompt = (
+        "You are the Analyst agent's reporting assistant. Summarise this week's "
+        "optimisation report in 2 to 3 concise sentences for a non-technical "
+        "operator. Only reference the campaign, ad set, pages, and figures given "
+        "below -- never invent one that is not explicitly provided."
+    )
+    rewrite_text = ", ".join(page["landing_page"] for page in flagged_pages) or "none"
+    roas_text = f"{overall_roas:.2f}x" if overall_roas is not None else "no data"
+    user_prompt = (
+        f"Client: {client_id}\n"
+        f"Recommended to scale: {scale_key or 'none'}\n"
+        f"Recommended to pause: {pause_key or 'none'}\n"
+        f"Landing pages to rewrite: {rewrite_text}\n"
+        f"Overall ROAS: {roas_text}"
+    )
+    return generate_text(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        agent_name="analyst",
+        client_id=client_id,
+        phase="phase_b_weekly_summary",
+    )
 
 
 def _scale_recommendations(campaign_attribution: dict) -> list[str]:

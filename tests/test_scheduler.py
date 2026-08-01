@@ -1,4 +1,26 @@
+import common.llm as llm_module
 from agents.analyst.scheduler import build_weekly_optimisation_report
+
+
+def test_weekly_report_shows_unavailable_summary_when_deepseek_unconfigured(monkeypatch):
+    monkeypatch.setattr(llm_module.settings, "DEEPSEEK_API_KEY", "", raising=False)
+
+    report = build_weekly_optimisation_report()
+
+    assert "AI summary (DeepSeek):" in report
+    assert "unavailable (DeepSeek not configured or unreachable)" in report
+
+
+def test_weekly_report_includes_generated_summary_when_deepseek_configured(monkeypatch):
+    monkeypatch.setattr(llm_module.settings, "DEEPSEEK_API_KEY", "sk-test", raising=False)
+    monkeypatch.setattr(
+        llm_module, "generate_text", lambda **kwargs: "Scale the top campaign this week."
+    )
+
+    report = build_weekly_optimisation_report()
+
+    assert "AI summary (DeepSeek):" in report
+    assert "Scale the top campaign this week." in report
 
 
 def test_weekly_report_has_one_recommendation_per_category():

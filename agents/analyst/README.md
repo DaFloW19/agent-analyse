@@ -10,7 +10,7 @@ The Analyst is the observation and performance intelligence agent. It studies hi
 - Break down CPL/CPQ/CPQL by campaign, ad set, and creative asset (B2), never dropping unattributed leads.
 - Flag landing pages below the 15% visitor-to-form threshold (B3).
 - Detect stage-conversion anomalies, subject to a minimum sample-size floor so ordinary variance never fires an alert (B5/ANA-03).
-- Generate a weekly optimisation report with concrete, evidence-backed recommendations every Monday (B6). It only recommends — it never executes.
+- Generate a weekly optimisation report with concrete, evidence-backed recommendations every Monday (B6), ending with a DeepSeek-generated plain-language summary of that week's figures. It only recommends — it never executes.
 - Act as an observation binome when another agent is called for a task.
 - Trace every action through Langfuse when configured; run as a clean no-op otherwise (B7).
 - Dual-write every logged action to a local JSONL file and the central `agent_logs` table, without ever crashing or blocking if the database is unreachable.
@@ -66,6 +66,7 @@ Commands:
 /report
 /weekly_report
 /alerts
+/optimisation_report
 /observe media_buyer
 /observe media_buyer pause_ad_set conversions=6 dry_run=true
 ```
@@ -81,9 +82,10 @@ Tests always run against an in-memory SQLite database (see `tests/conftest.py`),
 ## Known limitations
 
 - Phase C is not started.
-- No live Postgres server was available in this dev environment; the central log store is implemented and tested against SQLite, but has not been validated against a real Postgres instance. Run `python -m scripts.init_db` against a real `DATABASE_URL` before relying on it in production.
+- The central log store was validated against a real local PostgreSQL 17 instance on 2026-08-01 (schema creation + 6 simulated agent logs, zero write failures). The automated test suite still runs against in-memory SQLite for speed and CI independence.
 - The seed dataset (`agents/analyst/seed_data.py`) stands in for real CRM/ad-platform data. Swapping in real data sources is a Phase C concern (data pull layer already isolates KPI arithmetic from data shape).
 - The weekly optimisation report's "scale"/"pause" recommendations are based on CPQL only; richer criteria (statistical confidence, minimum conversions) are Phase C (MB-03-equivalent) work.
+- Without `DEEPSEEK_API_KEY` set, the weekly report's plain-language summary shows "unavailable" instead of generated text — this is a clean no-op, not an error.
 
 ## Inputs and outputs
 
