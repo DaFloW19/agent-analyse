@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from time import perf_counter
 
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 from common.logging import log_action
 from common.tracing import traced_action
 from config.settings import settings
@@ -80,17 +82,8 @@ def generate_text(
         as_type="generation",
     ):
         try:
-            import litellm
-
-            response = litellm.completion(
-                model=DEEPSEEK_MODEL,
-                api_key=settings.get("DEEPSEEK_API_KEY"),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=max_tokens,
-                timeout=10,
+            response = _completion_with_retry(
+                system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=max_tokens
             )
             text = response.choices[0].message.content.strip()
         except Exception as exc:  # noqa: BLE001 - an LLM outage must never crash the caller
@@ -109,6 +102,43 @@ def generate_text(
             latency_ms=latency_ms,
         )
         return text
+
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
+def _completion_with_retry(*, system_prompt: str, user_prompt: str, max_tokens: int):
+    """Call `litellm.completion` with exponential backoff, up to 3 attempts.
+
+    Retry parameters match the Media Buyer and Closer agents' own tenacity
+    usage on their external calls, for a consistent retry pattern across
+    the system (per `AGENT_LIBRARIES_ADDENDUM.md`: nothing in the stack
+    retried transient failures before this).
+
+    Args:
+        system_prompt: System role content.
+        user_prompt: User role content.
+        max_tokens: Upper bound on the completion length.
+
+    Returns:
+        The raw `litellm.completion` response.
+
+    Raises:
+        Exception: Whatever `litellm` raises, after 3 failed attempts.
+            `generate_text` catches this and returns `None` rather than
+            raising further -- an LLM outage must never crash the caller.
+    """
+
+    import litellm
+
+    return litellm.completion(
+        model=DEEPSEEK_MODEL,
+        api_key=settings.get("DEEPSEEK_API_KEY"),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=max_tokens,
+        timeout=10,
+    )
 
 
 def _log_generation_failure(
