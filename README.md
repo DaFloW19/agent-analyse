@@ -14,6 +14,7 @@ Analyst agent for Marketing Project.
 - `common/logging.py`: mandatory local JSONL logging helper, dual-writing to `common/db.py`'s central `agent_logs` table.
 - `common/tracing.py`: no-op-safe Langfuse tracing wrapper.
 - `scripts/init_db.py`: one-shot script to provision the central log store schema (`python -m scripts.init_db`).
+- `scripts/generate_test_logs.py`: simulates one action per non-Analyst agent through `log_action`, since those agents do not exist in this repo yet (`python -m scripts.generate_test_logs`). See `docs/LOG_AUDIT.md`.
 
 ## Local Run
 
