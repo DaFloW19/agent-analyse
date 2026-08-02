@@ -9,10 +9,17 @@ for "sent to the Commander" until a real Commander agent exists.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
+from agents.analyst import content_strategist_notify
 from agents.analyst.attribution import attribution_breakdown
 from agents.analyst.data_pull import pull_kpi_report
 from agents.analyst.landing_pages import landing_page_performance
+from agents.analyst.reporting import (
+    build_phase_a_alerts,
+    format_alerts_for_telegram,
+    save_kpi_snapshots,
+)
 from agents.analyst.seed_data import load_seed_dataset
 from config.settings import settings
 
@@ -50,6 +57,17 @@ def build_weekly_optimisation_report(client_id: str | None = None) -> str:
     lines.extend(_scale_recommendations(campaign_attribution))
     lines.extend(_pause_recommendations(ad_set_attribution))
     lines.extend(_rewrite_recommendations(landing_pages))
+
+    if flagged_pages:
+        notified = content_strategist_notify.notify_content_strategist_of_flagged_pages(
+            flagged_pages, active_client_id
+        )
+        lines.append(
+            f"Content Strategist notified (best-effort): {len(notified)}/{len(flagged_pages)} "
+            "page(s) acknowledged. Their API has no page identifier, so this correlation "
+            "only exists in our own logs."
+        )
+        lines.append("")
 
     overall_roas = report["roas"]["value"]
     roas_line = (
@@ -214,13 +232,49 @@ def _rewrite_recommendations(landing_pages: list[dict]) -> list[str]:
     return lines
 
 
-def start_scheduler(send: SendCallable, client_id: str | None = None) -> object:
-    """Start the APScheduler job that sends the weekly report every Monday.
+async def run_weekly_report_job(send: SendCallable, client_id: str | None = None) -> None:
+    """Build the weekly report, snapshot this week's KPIs, then send.
+
+    Extracted from `start_scheduler` so it can be called and tested
+    directly, without needing a running `AsyncIOScheduler`.
 
     Args:
-        send: Async callable that delivers the report text (e.g. a Telegram
-            send-message coroutine).
-        client_id: Client identifier passed through to the report builder.
+        send: Async callable that delivers the report text.
+        client_id: Client identifier. Defaults to `settings.analyst.client_id`.
+    """
+
+    active_client_id = client_id or settings.analyst.client_id
+    report_text = build_weekly_optimisation_report(client_id)
+    report = pull_kpi_report(load_seed_dataset(), client_id=active_client_id)
+    save_kpi_snapshots(report, datetime.now(UTC), active_client_id)
+    await send(report_text)
+
+
+async def run_anomaly_watch_job(send: SendCallable, client_id: str | None = None) -> None:
+    """Check for conversion-drop anomalies and push an alert if any fire.
+
+    Unlike `/alerts` (pull, on operator request), this job pushes
+    automatically -- but only when there is something to say, never an
+    empty "all clear" message on every run.
+
+    Args:
+        send: Async callable that delivers the alert text.
+        client_id: Client identifier. Defaults to `settings.analyst.client_id`.
+    """
+
+    active_client_id = client_id or settings.analyst.client_id
+    alerts = build_phase_a_alerts(active_client_id)
+    if alerts:
+        await send(format_alerts_for_telegram(alerts))
+
+
+def start_scheduler(send: SendCallable, client_id: str | None = None) -> object:
+    """Start the Analyst's two background jobs: weekly report and anomaly watch.
+
+    Args:
+        send: Async callable that delivers report/alert text (e.g. a
+            Telegram send-message coroutine).
+        client_id: Client identifier passed through to both jobs.
 
     Returns:
         object: The running `AsyncIOScheduler` instance, so the caller can
@@ -229,14 +283,16 @@ def start_scheduler(send: SendCallable, client_id: str | None = None) -> object:
 
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.triggers.interval import IntervalTrigger
 
     scheduler = AsyncIOScheduler()
-
-    async def _job() -> None:
-        """Build and send the weekly optimisation report."""
-
-        await send(build_weekly_optimisation_report(client_id))
-
-    scheduler.add_job(_job, CronTrigger(day_of_week="mon", hour=8, minute=0))
+    scheduler.add_job(
+        lambda: run_weekly_report_job(send, client_id),
+        CronTrigger(day_of_week="mon", hour=8, minute=0),
+    )
+    scheduler.add_job(
+        lambda: run_anomaly_watch_job(send, client_id),
+        IntervalTrigger(hours=6),
+    )
     scheduler.start()
     return scheduler

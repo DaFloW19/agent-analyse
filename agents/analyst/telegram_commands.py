@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any
 
 from agents.analyst.agent import AnalystAgent
 from agents.analyst.reporting import (
+    attach_week_over_week,
     build_phase_a_alerts,
     build_phase_a_report,
     format_alerts_for_telegram,
@@ -170,7 +172,8 @@ def handle_text_command(
             phase="phase_b_report",
             model_used="rule-based",
         ):
-            return format_report_for_telegram(build_phase_a_report())
+            report = attach_week_over_week(build_phase_a_report(), datetime.now(UTC))
+            return format_report_for_telegram(report)
 
     if command == "/weekly_report":
         with traced_action(
@@ -179,7 +182,7 @@ def handle_text_command(
             phase="phase_b_weekly_report",
             model_used="rule-based",
         ):
-            report = build_phase_a_report()
+            report = attach_week_over_week(build_phase_a_report(), datetime.now(UTC))
             alerts = build_phase_a_alerts(active_client_id)
             return format_weekly_report_for_telegram(report, alerts)
 

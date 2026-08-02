@@ -16,6 +16,8 @@ Analyst agent for Marketing Project.
 - `common/llm.py`: no-op-safe DeepSeek text generation wrapper, used for the weekly report's plain-language summary. Blank `DEEPSEEK_API_KEY` = clean no-op, never a crash.
 - `scripts/init_db.py`: one-shot script to provision the central log store schema (`python -m scripts.init_db`).
 - `scripts/generate_test_logs.py`: simulates one action per non-Analyst agent through `log_action`, since those agents do not exist in this repo yet (`python -m scripts.generate_test_logs`). See `docs/LOG_AUDIT.md`.
+- `agents/analyst/live_data.py`: best-effort HTTP clients for CRM Keeper and Media Buyer, verified against their actual API contracts. Returns `None` on any failure so `data_pull.py` can fall back to simulated data.
+- `agents/analyst/content_strategist_notify.py`: best-effort notification to Content Strategist's `/cro-analysis` for flagged landing pages (their API has no page identifier -- see `agents/analyst/README.md`'s Known limitations).
 
 ## Local Run
 

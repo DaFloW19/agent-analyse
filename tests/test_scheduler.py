@@ -1,5 +1,12 @@
+import asyncio
+
+import agents.analyst.scheduler as scheduler_module
 import common.llm as llm_module
-from agents.analyst.scheduler import build_weekly_optimisation_report
+from agents.analyst.scheduler import (
+    build_weekly_optimisation_report,
+    run_anomaly_watch_job,
+    run_weekly_report_job,
+)
 
 
 def test_weekly_report_shows_unavailable_summary_when_deepseek_unconfigured(monkeypatch):
@@ -54,3 +61,67 @@ def test_weekly_report_scale_and_pause_never_recommend_unattributed():
 
     assert "Scale: unattributed" not in report
     assert "Pause: unattributed" not in report
+
+
+def test_weekly_report_mentions_content_strategist_best_effort_notification():
+    report = build_weekly_optimisation_report()
+
+    assert "Content Strategist notified (best-effort)" in report
+
+
+def test_run_weekly_report_job_saves_a_snapshot_and_sends_the_report(monkeypatch):
+    saved = {}
+    sent = {}
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "save_kpi_snapshots",
+        lambda report, captured_at, client_id: saved.update(report=report, client_id=client_id),
+    )
+
+    async def _fake_send(text: str) -> None:
+        sent["text"] = text
+
+    asyncio.run(run_weekly_report_job(_fake_send, client_id="test-job-client"))
+
+    assert saved["client_id"] == "test-job-client"
+    assert "cpl" in saved["report"]
+    assert "Weekly Optimisation Report" in sent["text"]
+
+
+def test_run_anomaly_watch_job_sends_nothing_when_no_alerts(monkeypatch):
+    monkeypatch.setattr(scheduler_module, "build_phase_a_alerts", lambda client_id: [])
+
+    sent = {"called": False}
+
+    async def _fake_send(text: str) -> None:
+        sent["called"] = True
+
+    asyncio.run(run_anomaly_watch_job(_fake_send))
+
+    assert sent["called"] is False
+
+
+def test_run_anomaly_watch_job_sends_when_alerts_fire(monkeypatch):
+    import agents.analyst.scheduler as scheduler_module
+
+    fake_alert = {
+        "transition": "new_to_mql",
+        "label": "New to MQL",
+        "previous_rate": 70.0,
+        "current_rate": 30.0,
+        "drop_pct": 57.14,
+        "previous_denominator": 100,
+        "current_denominator": 90,
+        "data_as_of": "2026-08-03T08:00:00Z",
+    }
+    monkeypatch.setattr(scheduler_module, "build_phase_a_alerts", lambda client_id: [fake_alert])
+
+    sent = {}
+
+    async def _fake_send(text: str) -> None:
+        sent["text"] = text
+
+    asyncio.run(run_anomaly_watch_job(_fake_send))
+
+    assert "New to MQL" in sent["text"]

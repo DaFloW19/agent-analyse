@@ -5,11 +5,11 @@ The Analyst is the observation and performance intelligence agent. It studies hi
 ## Responsibilities
 
 - Audit all agent logs against the mandatory schema.
-- Calculate funnel and performance KPIs through the shared metrics module.
-- Produce KPI reports with week-on-week freshness (`data_as_of`, staleness flag).
-- Break down CPL/CPQ/CPQL by campaign, ad set, and creative asset (B2), never dropping unattributed leads.
-- Flag landing pages below the 15% visitor-to-form threshold (B3).
-- Detect stage-conversion anomalies, subject to a minimum sample-size floor so ordinary variance never fires an alert (B5/ANA-03).
+- Calculate funnel and performance KPIs through the shared metrics module. CPL, CPQ, CPQL, and stage_conversion_rate are pulled live from CRM Keeper and Media Buyer when both are reachable, falling back to the seed dataset otherwise (`agents/analyst/live_data.py`, `data_pull.py`). Every KPI carries a `source` field (`"live"` or `"simulated"`) so a report never silently mixes the two.
+- Produce KPI reports with week-on-week deltas (`common/db.py`'s `KpiSnapshot` table, one row per metric captured every Monday) and freshness flags (`data_as_of`, staleness).
+- Break down CPL/CPQ/CPQL by campaign, ad set, and creative asset (B2), never dropping unattributed leads. Always simulated: neither CRM Keeper nor Media Buyer expose this granularity (verified against their actual code).
+- Flag landing pages below the 15% visitor-to-form threshold (B3), and notify Content Strategist's `/cro-analysis` best-effort (their API has no page identifier — see Known limitations).
+- Detect stage-conversion anomalies, subject to a minimum sample-size floor so ordinary variance never fires an alert (B5/ANA-03) — pushed automatically every 6 hours when something fires, in addition to the on-demand `/alerts` command.
 - Generate a weekly optimisation report with concrete, evidence-backed recommendations every Monday (B6), ending with a DeepSeek-generated plain-language summary of that week's figures. It only recommends — it never executes.
 - Act as an observation binome when another agent is called for a task.
 - Trace every action through Langfuse when configured; run as a clean no-op otherwise (B7).
@@ -32,7 +32,7 @@ copy .env.example .env  # fill in TELEGRAM_BOT_TOKEN at minimum
 
 ## Environment variables
 
-See the root `.env.example` for the full list (`ANALYST_CLIENT_ID`, `TELEGRAM_BOT_TOKEN`, `LANGFUSE_*`, `DATABASE_URL`, ...).
+See the root `.env.example` for the full list (`ANALYST_CLIENT_ID`, `TELEGRAM_BOT_TOKEN`, `LANGFUSE_*`, `DATABASE_URL`, `CRM_KEEPER_URL`, `MEDIA_BUYER_URL`, `CONTENT_STRATEGIST_URL`, ...). The three agent URLs are best-effort: if unreachable, the Analyst falls back to simulated data and never crashes.
 
 ## Current Phase
 
@@ -55,7 +55,7 @@ Set `TELEGRAM_BOT_TOKEN` in `.env`, then run:
 python -m agents.analyst.telegram_bot
 ```
 
-Starting the bot also starts the weekly optimisation report job (every Monday 08:00), which sends to `TELEGRAM_ALLOWED_CHAT_ID` if set.
+Starting the bot also starts two background jobs, both sending to `TELEGRAM_ALLOWED_CHAT_ID` if set: the weekly optimisation report (every Monday 08:00, also snapshots this week's KPIs for next week's delta), and an anomaly watch (every 6 hours, silent unless a conversion-drop alert actually fires).
 
 Commands:
 
@@ -83,7 +83,9 @@ Tests always run against an in-memory SQLite database (see `tests/conftest.py`),
 
 - Phase C is not started.
 - The central log store was validated against a real local PostgreSQL 17 instance on 2026-08-01 (schema creation + 6 simulated agent logs, zero write failures). The automated test suite still runs against in-memory SQLite for speed and CI independence.
-- The seed dataset (`agents/analyst/seed_data.py`) stands in for real CRM/ad-platform data. Swapping in real data sources is a Phase C concern (data pull layer already isolates KPI arithmetic from data shape).
+- **ROAS and B2 attribution cannot be derived from live data and stay on the seed dataset**, marked `(simulated)` in every report. Verified directly against CRM Keeper's and Media Buyer's actual code: CRM Keeper's `LeadResponse` has no deal/contract-value field of any kind, and Media Buyer's `/performance/last-7-days` is a single account-level aggregate (spend/impressions/clicks/leads), never broken down by campaign, ad set, or creative asset. This needs a schema change on their side, not something this repo can work around.
+- **Content Strategist notification is best-effort and cannot correlate a page.** Its `/cro-analysis` endpoint accepts only `{"conversion_rate": float}` — no page identifier, no `client_id` (verified against its actual code). The Analyst still calls it per flagged page and logs the generic advice it returns, but Content Strategist itself has no way to know which page the number belongs to. Needs a `page_id`/`client_id` field added to their `LandingPagePerformance` model to become a real integration.
+- **The weekly optimisation report is not delivered to a real Commander.** Commander's `POST /event` routes an event *to* another agent (`target_agent` must be a key in its own agent registry) — it isn't designed to *receive* a report addressed to itself, and `POST /text` runs input through its LLM intent classifier and operator memory, which doesn't fit a structured report either (verified against its actual `api.py`/`core/agent.py`). The report keeps going to Telegram, explicitly labeled "for Commander review", until Commander exposes an intake endpoint suited for this.
 - The weekly optimisation report's "scale"/"pause" recommendations are based on CPQL only; richer criteria (statistical confidence, minimum conversions) are Phase C (MB-03-equivalent) work.
 - Without `DEEPSEEK_API_KEY` set, the weekly report's plain-language summary shows "unavailable" instead of generated text — this is a clean no-op, not an error.
 

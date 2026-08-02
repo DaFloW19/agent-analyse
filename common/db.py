@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Engine, Index, Integer, String, Text, create_engine
+from sqlalchemy import DateTime, Engine, Float, Index, Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from config.settings import settings
@@ -47,6 +47,25 @@ class AgentLog(Base):
     model_used: Mapped[str] = mapped_column(String(100), nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class KpiSnapshot(Base):
+    """One KPI value captured at a point in time, for week-on-week comparison.
+
+    Written once per metric by the Monday weekly job (`scheduler.py`), not
+    on every manual `/report` call, to avoid noisy near-duplicate rows.
+    """
+
+    __tablename__ = "kpi_snapshots"
+    __table_args__ = (
+        Index("ix_kpi_snapshots_client_metric_captured", "client_id", "metric_name", "captured_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 _ENGINE: Engine | None = None
@@ -120,3 +139,72 @@ def write_agent_log(entry: dict) -> None:
             )
         )
         session.commit()
+
+
+def write_kpi_snapshot(
+    client_id: str, metric_name: str, value: float | None, captured_at: datetime
+) -> None:
+    """Write one KPI snapshot row for later week-on-week comparison.
+
+    Args:
+        client_id: Client identifier.
+        metric_name: Canonical KPI key (e.g. `"cpl"`).
+        value: The metric's value at `captured_at`, or `None` when the
+            metric had no data that period.
+        captured_at: When this value was computed.
+
+    Raises:
+        Exception: Any database error is propagated to the caller, which is
+            expected to catch it -- a database outage must not stop the
+            weekly job from sending the rest of its report.
+    """
+
+    engine = get_engine()
+    with Session(engine) as session:
+        session.add(
+            KpiSnapshot(
+                client_id=client_id,
+                metric_name=metric_name,
+                value=value,
+                captured_at=captured_at,
+            )
+        )
+        session.commit()
+
+
+def get_closest_kpi_snapshot(
+    client_id: str, metric_name: str, target_time: datetime
+) -> float | None:
+    """Return the snapshot value closest in time to `target_time`.
+
+    Args:
+        client_id: Client identifier.
+        metric_name: Canonical KPI key.
+        target_time: The point in time to find the nearest snapshot to
+            (typically "now minus 7 days").
+
+    Returns:
+        float | None: The closest snapshot's value, or `None` if no
+        snapshot exists for this client/metric yet (e.g. the first Monday).
+    """
+
+    engine = get_engine()
+    with Session(engine) as session:
+        rows = session.scalars(
+            select(KpiSnapshot).where(
+                KpiSnapshot.client_id == client_id, KpiSnapshot.metric_name == metric_name
+            )
+        ).all()
+
+    if not rows:
+        return None
+
+    # SQLite silently drops tzinfo on DateTime(timezone=True) columns (Postgres does
+    # not), so `row.captured_at` may come back naive while `target_time` is aware --
+    # compare both as naive UTC rather than branching on the dialect.
+    naive_target = target_time.replace(tzinfo=None)
+    closest = min(
+        rows,
+        key=lambda row: abs((row.captured_at.replace(tzinfo=None) - naive_target).total_seconds()),
+    )
+    return closest.value

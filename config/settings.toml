@@ -1,6 +1,16 @@
 [default]
 database_url = "postgresql+psycopg://user:password@localhost:5432/agent_analyse"
 
+# NOTE: crm_keeper and content_strategist both default to port 8000 in their
+# own repos (unrelated services, same default) -- override one in .env if
+# you run both locally at the same time.
+# Flat keys, not nested under a table: matches how .env's flat env vars are
+# read (settings.get("CRM_KEEPER_URL")), avoiding the settings.urls.host vs
+# LANGFUSE_HOST-style mismatch this project already hit once.
+CRM_KEEPER_URL = "http://localhost:8000"
+MEDIA_BUYER_URL = "http://localhost:8004"
+CONTENT_STRATEGIST_URL = "http://localhost:8000"
+
 [default.analyst]
 client_id = "demo-real-estate"
 model = "mock-model"

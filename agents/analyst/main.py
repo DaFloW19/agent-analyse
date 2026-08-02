@@ -1,5 +1,6 @@
 """FastAPI entrypoint for the Analyst agent."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
@@ -7,7 +8,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from agents.analyst.agent import AnalystAgent
-from agents.analyst.reporting import build_phase_a_report
+from agents.analyst.reporting import attach_week_over_week, build_phase_a_report
 from agents.analyst.schemas import ObservationRequest, ObservationResponse, ReportResponse
 from common.logging import log_action
 from common.tracing import traced_action
@@ -82,10 +83,11 @@ def report() -> ReportResponse:
         phase="phase_b_report",
         model_used="rule-based",
     ):
+        report = attach_week_over_week(build_phase_a_report(), datetime.now(UTC))
         return ReportResponse(
             agent_name="analyst",
             status="ok",
             client_id=settings.analyst.client_id,
-            metrics=build_phase_a_report(),
-            message="Phase B report generated from the Analyst seed dataset.",
+            metrics=report,
+            message="Phase B report, live where reachable, seeded otherwise.",
         )

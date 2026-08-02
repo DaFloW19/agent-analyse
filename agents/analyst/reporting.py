@@ -78,6 +78,84 @@ def mark_stale(
     return marked
 
 
+def attach_week_over_week(
+    report: dict[str, dict[str, float | str | None]],
+    now: datetime,
+    client_id: str | None = None,
+) -> dict[str, dict[str, float | str | None]]:
+    """Attach each KPI's value from ~7 days ago, from stored snapshots.
+
+    Snapshots are written once a week by the Monday scheduler job
+    (`scheduler.py`), never on every manual `/report` call. A database
+    outage or a metric with no prior snapshot both degrade to "no prior
+    snapshot" shown in the report, never a crash.
+
+    Args:
+        report: KPI report returned by `build_phase_a_report`.
+        now: Reference timestamp to look ~7 days back from. Passed in
+            explicitly so this function stays pure and testable (never
+            calls `datetime.now()` itself).
+        client_id: Client identifier. Defaults to
+            `settings.analyst.client_id`.
+
+    Returns:
+        dict[str, dict[str, float | str | None]]: The same report with a
+        `previous_value` key added to every KPI result (`None` when no
+        snapshot exists for that metric yet).
+    """
+
+    from common.db import get_closest_kpi_snapshot
+
+    active_client_id = client_id or settings.analyst.client_id
+    target_time = now - timedelta(days=7)
+
+    enriched = {}
+    for metric_name, result in report.items():
+        try:
+            previous_value = get_closest_kpi_snapshot(active_client_id, metric_name, target_time)
+        except Exception:  # noqa: BLE001 - a snapshot lookup failure must never block the report
+            previous_value = None
+        enriched[metric_name] = {**result, "previous_value": previous_value}
+    return enriched
+
+
+def save_kpi_snapshots(
+    report: dict[str, dict[str, float | str | None]],
+    captured_at: datetime,
+    client_id: str | None = None,
+) -> None:
+    """Persist one snapshot row per KPI for future week-on-week comparison.
+
+    Called once a week by the Monday scheduler job, never on every manual
+    `/report` call, to avoid noisy near-duplicate rows.
+
+    Args:
+        report: KPI report returned by `build_phase_a_report`.
+        captured_at: Timestamp to record against every snapshot row.
+        client_id: Client identifier. Defaults to
+            `settings.analyst.client_id`.
+    """
+
+    from common.db import write_kpi_snapshot
+
+    active_client_id = client_id or settings.analyst.client_id
+    for metric_name, result in report.items():
+        try:
+            write_kpi_snapshot(active_client_id, metric_name, result.get("value"), captured_at)
+        except Exception as exc:  # noqa: BLE001 - a DB outage must never stop the weekly job
+            log_action(
+                agent_name="analyst",
+                action_type="kpi_snapshot_write_failed",
+                input_summary=f"Attempted to save a snapshot for {metric_name}",
+                output_summary="Continuing without this snapshot.",
+                lead_id=None,
+                client_id=active_client_id,
+                model_used="rule-based",
+                latency_ms=0,
+                extra_fields={"error_type": type(exc).__name__, "error_message": str(exc)},
+            )
+
+
 def format_report_for_telegram(report: dict[str, dict[str, float | str | None]]) -> str:
     """Format KPI report values for a compact Telegram response.
 
@@ -94,10 +172,41 @@ def format_report_for_telegram(report: dict[str, dict[str, float | str | None]])
         label = KPI_LABELS.get(metric_name, metric_name)
         rendered_value = _format_metric_value(metric_name, result["value"])
         stale_suffix = " [stale]" if result.get("stale") else ""
-        lines.append(f"{label}: {rendered_value}{stale_suffix}")
+        simulated_suffix = " (simulated)" if result.get("source") == "simulated" else ""
+        delta_suffix = _format_delta_suffix(metric_name, result)
+        lines.append(f"{label}: {rendered_value}{delta_suffix}{stale_suffix}{simulated_suffix}")
     lines.append("")
     lines.append(f"Data as of: {_oldest_report_timestamp(report)}")
     return "\n".join(lines)
+
+
+def _format_delta_suffix(metric_name: str, result: dict[str, float | str | None]) -> str:
+    """Render the week-on-week delta suffix for one KPI result, if present.
+
+    Args:
+        metric_name: Canonical KPI key.
+        result: KPI result, optionally carrying a `previous_value` key added
+            by `attach_week_over_week` (None or absent = no prior snapshot).
+
+    Returns:
+        str: A ` (delta vs last week)` suffix, or an empty string when no
+        prior snapshot exists or the current value itself is unavailable.
+    """
+
+    if "previous_value" not in result:
+        return ""
+
+    value = result.get("value")
+    previous_value = result.get("previous_value")
+    if value is None or previous_value is None:
+        return " (no prior snapshot)"
+
+    delta = value - previous_value
+    arrow = "▲" if delta > 0 else "▼" if delta < 0 else "→"
+    unit = KPI_UNITS.get(metric_name)
+    if unit == "percent":
+        return f" ({arrow} {abs(delta):.2f}pp vs last week)"
+    return f" ({arrow} {abs(delta):.2f} vs last week)"
 
 
 def build_conversion_drop_alerts(
