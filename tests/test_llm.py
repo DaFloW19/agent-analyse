@@ -1,7 +1,7 @@
 from tenacity import wait_none
 
 import common.llm as llm_module
-from common.llm import generate_text, is_configured
+from common.llm import active_model, generate_text, is_configured
 
 
 def _default_kwargs() -> dict:
@@ -88,6 +88,50 @@ def test_generate_text_retries_transient_failures_then_succeeds(monkeypatch):
 
     assert result == "Recovered after retries."
     assert calls["count"] == 3
+
+
+def test_active_model_defaults_to_deepseek(monkeypatch):
+    monkeypatch.setattr(llm_module.settings, "LLM_MODEL", "", raising=False)
+
+    assert active_model() == "deepseek/deepseek-chat"
+
+
+def test_active_model_overridable_via_setting(monkeypatch):
+    monkeypatch.setattr(llm_module.settings, "LLM_MODEL", "gemini/gemini-1.5-flash", raising=False)
+
+    assert active_model() == "gemini/gemini-1.5-flash"
+
+
+def test_is_configured_checks_the_active_providers_key(monkeypatch):
+    monkeypatch.setattr(llm_module.settings, "LLM_MODEL", "gemini/gemini-1.5-flash", raising=False)
+    monkeypatch.setattr(llm_module.settings, "DEEPSEEK_API_KEY", "sk-test", raising=False)
+    monkeypatch.setattr(llm_module.settings, "GEMINI_API_KEY", "", raising=False)
+
+    # DeepSeek's key is set, but Gemini is the active model and has no key -> unconfigured.
+    assert is_configured() is False
+
+    monkeypatch.setattr(llm_module.settings, "GEMINI_API_KEY", "gm-test", raising=False)
+    assert is_configured() is True
+
+
+def test_generate_text_uses_the_active_model_for_the_completion_call(monkeypatch):
+    monkeypatch.setattr(llm_module.settings, "LLM_MODEL", "gemini/gemini-1.5-flash", raising=False)
+    monkeypatch.setattr(llm_module.settings, "GEMINI_API_KEY", "gm-test", raising=False)
+
+    seen_models = []
+
+    import litellm
+
+    def _fake_completion(**kwargs):
+        seen_models.append(kwargs["model"])
+        return _fake_response("Gemini says hello.")
+
+    monkeypatch.setattr(litellm, "completion", _fake_completion)
+
+    result = generate_text(**_default_kwargs())
+
+    assert result == "Gemini says hello."
+    assert seen_models == ["gemini/gemini-1.5-flash"]
 
 
 def test_generate_text_survives_a_persistent_api_failure(monkeypatch):

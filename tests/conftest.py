@@ -41,6 +41,9 @@ def _disable_real_external_credentials():
     settings.set("LANGFUSE_PUBLIC_KEY", "")
     settings.set("LANGFUSE_SECRET_KEY", "")
     settings.set("DEEPSEEK_API_KEY", "")
+    settings.set("GEMINI_API_KEY", "")
+    settings.set("OPENAI_API_KEY", "")
+    settings.set("LLM_MODEL", "")
     yield
 
 

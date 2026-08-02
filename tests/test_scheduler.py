@@ -9,16 +9,16 @@ from agents.analyst.scheduler import (
 )
 
 
-def test_weekly_report_shows_unavailable_summary_when_deepseek_unconfigured(monkeypatch):
+def test_weekly_report_shows_unavailable_summary_when_llm_unconfigured(monkeypatch):
     monkeypatch.setattr(llm_module.settings, "DEEPSEEK_API_KEY", "", raising=False)
 
     report = build_weekly_optimisation_report()
 
-    assert "AI summary (DeepSeek):" in report
-    assert "unavailable (DeepSeek not configured or unreachable)" in report
+    assert "AI summary (deepseek/deepseek-chat):" in report
+    assert "unavailable (LLM not configured or unreachable)" in report
 
 
-def test_weekly_report_includes_generated_summary_when_deepseek_configured(monkeypatch):
+def test_weekly_report_includes_generated_summary_when_llm_configured(monkeypatch):
     monkeypatch.setattr(llm_module.settings, "DEEPSEEK_API_KEY", "sk-test", raising=False)
     monkeypatch.setattr(
         llm_module, "generate_text", lambda **kwargs: "Scale the top campaign this week."
@@ -26,8 +26,21 @@ def test_weekly_report_includes_generated_summary_when_deepseek_configured(monke
 
     report = build_weekly_optimisation_report()
 
-    assert "AI summary (DeepSeek):" in report
+    assert "AI summary (deepseek/deepseek-chat):" in report
     assert "Scale the top campaign this week." in report
+
+
+def test_weekly_report_labels_the_summary_with_the_active_model(monkeypatch):
+    monkeypatch.setattr(llm_module.settings, "LLM_MODEL", "gemini/gemini-1.5-flash", raising=False)
+    monkeypatch.setattr(llm_module.settings, "GEMINI_API_KEY", "gm-test", raising=False)
+    monkeypatch.setattr(
+        llm_module, "generate_text", lambda **kwargs: "Gemini's take on this week."
+    )
+
+    report = build_weekly_optimisation_report()
+
+    assert "AI summary (gemini/gemini-1.5-flash):" in report
+    assert "Gemini's take on this week." in report
 
 
 def test_weekly_report_has_one_recommendation_per_category():

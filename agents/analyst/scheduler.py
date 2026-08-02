@@ -84,9 +84,11 @@ def build_weekly_optimisation_report(client_id: str | None = None) -> str:
         flagged_pages=flagged_pages,
         overall_roas=overall_roas,
     )
+    from common.llm import active_model
+
     lines.append("")
-    lines.append("AI summary (DeepSeek):")
-    lines.append(summary or "unavailable (DeepSeek not configured or unreachable)")
+    lines.append(f"AI summary ({active_model()}):")
+    lines.append(summary or "unavailable (LLM not configured or unreachable)")
 
     return "\n".join(lines)
 
@@ -99,7 +101,10 @@ def _generate_plain_language_summary(
     flagged_pages: list[dict],
     overall_roas: float | None,
 ) -> str | None:
-    """Ask DeepSeek for a short plain-language summary of this week's report.
+    """Ask the active LLM for a short plain-language summary of this week's report.
+
+    The provider is whatever `common.llm.active_model()` resolves to
+    (DeepSeek by default, overridable via `LLM_MODEL`).
 
     Args:
         client_id: Client identifier.
@@ -109,9 +114,9 @@ def _generate_plain_language_summary(
         overall_roas: Overall ROAS value, or None when there is no data.
 
     Returns:
-        str | None: A 2-3 sentence summary, or None when DeepSeek is not
-        configured or unreachable -- the caller must treat this exactly
-        like "no data", never crash or block on it.
+        str | None: A 2-3 sentence summary, or None when the active
+        provider is not configured or unreachable -- the caller must treat
+        this exactly like "no data", never crash or block on it.
     """
 
     from common.llm import generate_text
