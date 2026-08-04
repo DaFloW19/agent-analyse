@@ -10,7 +10,7 @@ The Analyst is the observation and performance intelligence agent. It studies hi
 - Break down CPL/CPQ/CPQL by campaign, ad set, and creative asset (B2), never dropping unattributed leads. Always simulated: neither CRM Keeper nor Media Buyer expose this granularity (verified against their actual code).
 - Flag landing pages below the 15% visitor-to-form threshold (B3), and notify Content Strategist's `/cro-analysis` best-effort (their API has no page identifier — see Known limitations).
 - Detect stage-conversion anomalies, subject to a minimum sample-size floor so ordinary variance never fires an alert (B5/ANA-03) — pushed automatically every 6 hours when something fires, in addition to the on-demand `/alerts` command.
-- Generate a weekly optimisation report with concrete, evidence-backed recommendations every Monday (B6), ending with a DeepSeek-generated plain-language summary of that week's figures. It only recommends — it never executes.
+- Generate a weekly optimisation report with concrete, evidence-backed recommendations every Monday (B6), ending with an LLM-generated plain-language summary of that week's figures (DeepSeek by default, any `litellm`-supported provider via `LLM_MODEL`). It only recommends — it never executes.
 - Act as an observation binome when another agent is called for a task.
 - Trace every action through Langfuse when configured; run as a clean no-op otherwise (B7).
 - Dual-write every logged action to a local JSONL file and the central `agent_logs` table, without ever crashing or blocking if the database is unreachable.
@@ -46,6 +46,19 @@ Phase B, mostly complete for the Analyst:
 ```powershell
 python -m uvicorn agents.analyst.main:app --reload
 ```
+
+Swagger/OpenAPI docs are then live at `http://localhost:8000/docs`. Routes:
+
+| Method | Path | Returns |
+| --- | --- | --- |
+| GET | `/health` | Service identity |
+| POST | `/observe` | Observation-binome guardrail check for another agent's task |
+| GET | `/report` | The 9 canonical KPIs, live where reachable, with week-on-week deltas |
+| GET | `/attribution?group_by=campaign\|ad_set\|creative_asset` | CPL/CPQ/CPQL breakdown (B2), always simulated |
+| GET | `/landing-pages` | Visitor-to-form conversion per page, flagged below 15% (B3) |
+| GET | `/alerts` | Conversion-drop alerts above the threshold and volume floor (B5/ANA-03) |
+| GET | `/weekly-report` | The weekly optimisation report as text (B6), read-only -- never snapshots KPIs or sends anything, unlike the real Monday job |
+| GET | `/status` | Live reachability of CRM Keeper/Media Buyer, LLM/Langfuse configuration |
 
 ## Running the Telegram bot
 
@@ -87,7 +100,7 @@ Tests always run against an in-memory SQLite database (see `tests/conftest.py`),
 - **Content Strategist notification is best-effort and cannot correlate a page.** Its `/cro-analysis` endpoint accepts only `{"conversion_rate": float}` — no page identifier, no `client_id` (verified against its actual code). The Analyst still calls it per flagged page and logs the generic advice it returns, but Content Strategist itself has no way to know which page the number belongs to. Needs a `page_id`/`client_id` field added to their `LandingPagePerformance` model to become a real integration.
 - **The weekly optimisation report is not delivered to a real Commander.** Commander's `POST /event` routes an event *to* another agent (`target_agent` must be a key in its own agent registry) — it isn't designed to *receive* a report addressed to itself, and `POST /text` runs input through its LLM intent classifier and operator memory, which doesn't fit a structured report either (verified against its actual `api.py`/`core/agent.py`). The report keeps going to Telegram, explicitly labeled "for Commander review", until Commander exposes an intake endpoint suited for this.
 - The weekly optimisation report's "scale"/"pause" recommendations are based on CPQL only; richer criteria (statistical confidence, minimum conversions) are Phase C (MB-03-equivalent) work.
-- Without `DEEPSEEK_API_KEY` set, the weekly report's plain-language summary shows "unavailable" instead of generated text — this is a clean no-op, not an error.
+- Without an API key set for the active `LLM_MODEL` provider (`DEEPSEEK_API_KEY` by default), the weekly report's plain-language summary shows "unavailable" instead of generated text — this is a clean no-op, not an error.
 
 ## Inputs and outputs
 

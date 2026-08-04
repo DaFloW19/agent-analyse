@@ -97,3 +97,74 @@ def test_report_endpoint_returns_all_nine_phase_a_kpis():
         "meeting_show_rate",
     }
     assert body["metrics"]["cpl"]["value"] == pull_kpi_report()["cpl"]["value"]
+
+
+def test_attribution_endpoint_defaults_to_campaign_grouping():
+    client = TestClient(app)
+
+    response = client.get("/attribution")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["group_by"] == "campaign"
+    assert body["client_id"]
+    assert "unattributed" in body["by_group"] or body["by_group"]
+
+
+def test_attribution_endpoint_accepts_ad_set_grouping():
+    client = TestClient(app)
+
+    response = client.get("/attribution", params={"group_by": "ad_set"})
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["group_by"] == "ad_set"
+    assert "adset_retarget_bad" in body["by_group"]
+
+
+def test_landing_pages_endpoint_flags_the_underperforming_page():
+    client = TestClient(app)
+
+    response = client.get("/landing-pages")
+
+    body = response.json()
+    assert response.status_code == 200
+    pages_by_name = {page["landing_page"]: page for page in body["pages"]}
+    assert pages_by_name["lp_buyers_v1"]["below_threshold"] is True
+
+
+def test_alerts_endpoint_returns_a_list():
+    client = TestClient(app)
+
+    response = client.get("/alerts")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert isinstance(body["alerts"], list)
+
+
+def test_weekly_report_endpoint_returns_report_text():
+    client = TestClient(app)
+
+    response = client.get("/weekly-report")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert "WEEKLY OPTIMISATION REPORT" in body["report"]
+
+
+def test_status_endpoint_reports_configuration_and_reachability():
+    client = TestClient(app)
+
+    response = client.get("/status")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["agent_name"] == "analyst"
+    # Live agent calls are mocked to unreachable by default in the test suite
+    # (see tests/conftest.py::_disable_live_agent_calls).
+    assert body["crm_keeper_reachable"] is False
+    assert body["media_buyer_reachable"] is False
+    assert "llm_model" in body
+    assert isinstance(body["llm_configured"], bool)
+    assert isinstance(body["langfuse_configured"], bool)

@@ -50,3 +50,84 @@ class ReportResponse(BaseModel):
     client_id: str
     metrics: dict[str, dict[str, float | str | None]]
     message: str
+
+
+class AttributionResponse(BaseModel):
+    """CPL/CPQ/CPQL breakdown by campaign, ad set, or creative asset (B2).
+
+    `top_performer`/`bottom_performer` carry the winning/losing key plus
+    its KPIs (`{"key": str, "cpl": {...}, "cpq": {...}, "cpql": {...}}`),
+    or `None` when there is nothing to rank.
+    """
+
+    agent_name: str
+    client_id: str
+    group_by: str
+    by_group: dict[str, dict[str, dict[str, float | str | None]]]
+    ranked: list[str]
+    top_performer: dict[str, Any] | None
+    bottom_performer: dict[str, Any] | None
+
+
+class LandingPageResult(BaseModel):
+    """One landing page's visitor-to-form conversion result (B3)."""
+
+    landing_page: str
+    conversion_rate_pct: float | None
+    visitors: int
+    form_submissions: int
+    below_threshold: bool
+    data_as_of: str
+
+
+class LandingPagesResponse(BaseModel):
+    """Landing page performance response (B3)."""
+
+    agent_name: str
+    client_id: str
+    pages: list[LandingPageResult]
+
+
+class AlertResult(BaseModel):
+    """One conversion-drop alert above the threshold and volume floor (B5/ANA-03)."""
+
+    transition: str
+    label: str
+    previous_rate: float
+    current_rate: float
+    drop_pct: float
+    previous_denominator: int
+    current_denominator: int
+    data_as_of: str
+
+
+class AlertsResponse(BaseModel):
+    """Conversion-drop alerts response (B5/ANA-03)."""
+
+    agent_name: str
+    client_id: str
+    alerts: list[AlertResult]
+
+
+class WeeklyReportResponse(BaseModel):
+    """Weekly optimisation report response (B6), as plain text."""
+
+    agent_name: str
+    client_id: str
+    report: str
+
+
+class StatusResponse(BaseModel):
+    """Reachability/configuration status of every dependency the Analyst uses.
+
+    `*_reachable` fields perform a live check (subject to the same
+    retry/timeout behaviour as the underlying client); `*_configured`
+    fields only check whether a key is set, no network call.
+    """
+
+    agent_name: str
+    crm_keeper_reachable: bool
+    media_buyer_reachable: bool
+    llm_configured: bool
+    llm_model: str
+    langfuse_configured: bool
