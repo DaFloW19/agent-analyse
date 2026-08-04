@@ -14,7 +14,7 @@ def test_weekly_report_shows_unavailable_summary_when_llm_unconfigured(monkeypat
 
     report = build_weekly_optimisation_report()
 
-    assert "AI summary (deepseek/deepseek-chat):" in report
+    assert "AI SUMMARY (deepseek/deepseek-chat)" in report
     assert "unavailable (LLM not configured or unreachable)" in report
 
 
@@ -26,7 +26,7 @@ def test_weekly_report_includes_generated_summary_when_llm_configured(monkeypatc
 
     report = build_weekly_optimisation_report()
 
-    assert "AI summary (deepseek/deepseek-chat):" in report
+    assert "AI SUMMARY (deepseek/deepseek-chat)" in report
     assert "Scale the top campaign this week." in report
 
 
@@ -39,47 +39,59 @@ def test_weekly_report_labels_the_summary_with_the_active_model(monkeypatch):
 
     report = build_weekly_optimisation_report()
 
-    assert "AI summary (gemini/gemini-1.5-flash):" in report
+    assert "AI SUMMARY (gemini/gemini-1.5-flash)" in report
     assert "Gemini's take on this week." in report
 
 
 def test_weekly_report_has_one_recommendation_per_category():
     report = build_weekly_optimisation_report()
 
-    assert "Scale:" in report
-    assert "Pause:" in report
-    assert "Rewrite:" in report
+    assert "SCALE UP" in report
+    assert "PAUSE" in report
+    assert "REWRITE" in report
 
 
 def test_weekly_report_names_the_deliberately_bad_ad_set_to_pause():
     report = build_weekly_optimisation_report()
 
-    assert "Pause: adset_retarget_bad" in report
+    assert "- Ad set: adset_retarget_bad" in report
 
 
 def test_weekly_report_names_the_underperforming_landing_page():
     report = build_weekly_optimisation_report()
 
-    assert "Rewrite: lp_buyers_v1" in report
+    assert "- Page: lp_buyers_v1" in report
 
 
 def test_weekly_report_states_it_never_executes():
     report = build_weekly_optimisation_report()
 
-    assert "no action below has been executed" in report.lower()
+    assert "nothing below has been executed automatically" in report.lower()
 
 
 def test_weekly_report_scale_and_pause_never_recommend_unattributed():
     report = build_weekly_optimisation_report()
 
-    assert "Scale: unattributed" not in report
-    assert "Pause: unattributed" not in report
+    assert "Campaign: unattributed" not in report
+    assert "Ad set: unattributed" not in report
 
 
 def test_weekly_report_mentions_content_strategist_best_effort_notification():
     report = build_weekly_optimisation_report()
 
-    assert "Content Strategist notified (best-effort)" in report
+    assert "CONTENT STRATEGIST NOTIFICATION" in report
+    assert "acknowledged (best-effort" in report
+
+
+def test_weekly_report_labels_are_plain_language_not_raw_kpi_jargon():
+    """The report must spell out what CPQL/CPL/ROAS mean, not just the acronym,
+    so an operator with no technical background can read it unaided."""
+
+    report = build_weekly_optimisation_report()
+
+    assert "Cost per SQL (CPQL)" in report
+    assert "Cost per lead (CPL)" in report
+    assert "ROAS (Return on Ad Spend)" in report
 
 
 def test_run_weekly_report_job_saves_a_snapshot_and_sends_the_report(monkeypatch):
@@ -99,7 +111,7 @@ def test_run_weekly_report_job_saves_a_snapshot_and_sends_the_report(monkeypatch
 
     assert saved["client_id"] == "test-job-client"
     assert "cpl" in saved["report"]
-    assert "Weekly Optimisation Report" in sent["text"]
+    assert "WEEKLY OPTIMISATION REPORT" in sent["text"]
 
 
 def test_run_anomaly_watch_job_sends_nothing_when_no_alerts(monkeypatch):

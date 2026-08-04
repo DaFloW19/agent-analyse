@@ -49,9 +49,8 @@ def build_weekly_optimisation_report(client_id: str | None = None) -> str:
     flagged_pages = [page for page in landing_pages if page["below_threshold"]]
 
     lines = [
-        "Weekly Optimisation Report (for Commander review)",
-        f"Client: {active_client_id}",
-        "The Analyst recommends only. No action below has been executed.",
+        f"WEEKLY OPTIMISATION REPORT - {active_client_id}",
+        "The Analyst only recommends. Nothing below has been executed automatically.",
         "",
     ]
     lines.extend(_scale_recommendations(campaign_attribution))
@@ -62,20 +61,24 @@ def build_weekly_optimisation_report(client_id: str | None = None) -> str:
         notified = content_strategist_notify.notify_content_strategist_of_flagged_pages(
             flagged_pages, active_client_id
         )
+        lines.append("CONTENT STRATEGIST NOTIFICATION")
         lines.append(
-            f"Content Strategist notified (best-effort): {len(notified)}/{len(flagged_pages)} "
-            "page(s) acknowledged. Their API has no page identifier, so this correlation "
-            "only exists in our own logs."
+            f"- {len(notified)} of {len(flagged_pages)} flagged page(s) acknowledged "
+            "(best-effort - their system has no page identifier yet, so this match only "
+            "exists in our own logs)"
         )
         lines.append("")
 
     overall_roas = report["roas"]["value"]
-    roas_line = (
-        f"Overall ROAS this period: {overall_roas:.2f}x"
-        if overall_roas is not None
-        else "Overall ROAS: no data"
-    )
-    lines.append(roas_line)
+    lines.append("OVERALL PERFORMANCE")
+    if overall_roas is not None:
+        lines.append(
+            f"- ROAS (Return on Ad Spend): {overall_roas:.2f}x "
+            f"- every 1 unit of ad spend returned {overall_roas:.2f}"
+        )
+    else:
+        lines.append("- ROAS (Return on Ad Spend): no data")
+    lines.append("")
 
     summary = _generate_plain_language_summary(
         client_id=active_client_id,
@@ -86,8 +89,7 @@ def build_weekly_optimisation_report(client_id: str | None = None) -> str:
     )
     from common.llm import active_model
 
-    lines.append("")
-    lines.append(f"AI summary ({active_model()}):")
+    lines.append(f"AI SUMMARY ({active_model()})")
     lines.append(summary or "unavailable (LLM not configured or unreachable)")
 
     return "\n".join(lines)
@@ -158,12 +160,18 @@ def _scale_recommendations(campaign_attribution: dict) -> list[str]:
 
     key = _best_attributed_key(campaign_attribution)
     if key is None:
-        return ["Scale: no campaign has enough SQL volume yet to recommend scaling.", ""]
+        return [
+            "SCALE UP - increase budget on this campaign",
+            "- No campaign has enough SQL volume yet to recommend scaling.",
+            "",
+        ]
 
     cpql_value = campaign_attribution["by_group"][key]["cpql"]["value"]
     return [
-        f"Scale: {key}",
-        f"  CPQL {cpql_value:.2f} - lowest cost-per-SQL across attributed campaigns.",
+        "SCALE UP - increase budget on this campaign",
+        f"- Campaign: {key}",
+        f"- Cost per SQL (CPQL): {cpql_value:.2f}",
+        "- Why: the lowest cost per qualified sale across all attributed campaigns",
         "",
     ]
 
@@ -181,15 +189,21 @@ def _pause_recommendations(ad_set_attribution: dict) -> list[str]:
 
     key = _worst_attributed_key(ad_set_attribution)
     if key is None:
-        return ["Pause: no attributed ad set stands out as underperforming.", ""]
+        return [
+            "PAUSE - stop spending on this ad set",
+            "- No attributed ad set stands out as underperforming.",
+            "",
+        ]
 
     group = ad_set_attribution["by_group"][key]
     cpql_value = group["cpql"]["value"]
-    cpql_text = "no SQL leads" if cpql_value is None else f"CPQL {cpql_value:.2f}"
+    cpql_text = "no SQL leads yet" if cpql_value is None else f"{cpql_value:.2f}"
     return [
-        f"Pause: {key}",
-        f"  {cpql_text}, CPL {group['cpl']['value']:.2f}"
-        " - worst cost-per-SQL across attributed ad sets.",
+        "PAUSE - stop spending on this ad set",
+        f"- Ad set: {key}",
+        f"- Cost per SQL (CPQL): {cpql_text}",
+        f"- Cost per lead (CPL): {group['cpl']['value']:.2f}",
+        "- Why: the highest cost per qualified sale across all attributed ad sets",
         "",
     ]
 
@@ -224,14 +238,19 @@ def _rewrite_recommendations(landing_pages: list[dict]) -> list[str]:
 
     flagged = [page for page in landing_pages if page["below_threshold"]]
     if not flagged:
-        return ["Rewrite: no landing page is below the 15% visitor-to-form threshold.", ""]
+        return [
+            "REWRITE - underperforming landing pages",
+            "- No landing page is below the 15% visitor-to-form threshold.",
+            "",
+        ]
 
-    lines = []
+    lines = ["REWRITE - these landing pages are underperforming"]
     for page in flagged:
-        lines.append(f"Rewrite: {page['landing_page']}")
+        lines.append(f"- Page: {page['landing_page']}")
         lines.append(
-            f"  {page['conversion_rate_pct']:.2f}% visitor-to-form "
-            f"({page['form_submissions']}/{page['visitors']}), below the 15% threshold."
+            f"  Conversion rate: {page['conversion_rate_pct']:.2f}% "
+            f"({page['form_submissions']} form submissions out of {page['visitors']} visitors) "
+            "- below the 15% minimum threshold"
         )
     lines.append("")
     return lines

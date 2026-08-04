@@ -43,6 +43,7 @@ def _disable_real_external_credentials():
     settings.set("DEEPSEEK_API_KEY", "")
     settings.set("GEMINI_API_KEY", "")
     settings.set("OPENAI_API_KEY", "")
+    settings.set("OPENROUTER_API_KEY", "")
     settings.set("LLM_MODEL", "")
     yield
 

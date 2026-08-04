@@ -67,10 +67,10 @@ def test_handle_alerts_command_returns_conversion_drop_alert():
 def test_handle_optimisation_report_command_returns_recommendations():
     response = handle_text_command("/optimisation_report", client_id="demo-real-estate")
 
-    assert "Weekly Optimisation Report" in response
-    assert "Scale:" in response
-    assert "Pause:" in response
-    assert "Rewrite:" in response
+    assert "WEEKLY OPTIMISATION REPORT" in response
+    assert "SCALE UP" in response
+    assert "PAUSE" in response
+    assert "REWRITE" in response
 
 
 def test_handle_weekly_report_command_returns_kpis_and_alerts():

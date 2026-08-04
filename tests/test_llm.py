@@ -114,6 +114,15 @@ def test_is_configured_checks_the_active_providers_key(monkeypatch):
     assert is_configured() is True
 
 
+def test_is_configured_true_for_deepseek_via_openrouter(monkeypatch):
+    monkeypatch.setattr(
+        llm_module.settings, "LLM_MODEL", "openrouter/deepseek/deepseek-chat", raising=False
+    )
+    monkeypatch.setattr(llm_module.settings, "OPENROUTER_API_KEY", "or-test", raising=False)
+
+    assert is_configured() is True
+
+
 def test_generate_text_uses_the_active_model_for_the_completion_call(monkeypatch):
     monkeypatch.setattr(llm_module.settings, "LLM_MODEL", "gemini/gemini-1.5-flash", raising=False)
     monkeypatch.setattr(llm_module.settings, "GEMINI_API_KEY", "gm-test", raising=False)

@@ -38,6 +38,11 @@ PROVIDER_API_KEY_SETTINGS = {
     "deepseek": "DEEPSEEK_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "openai": "OPENAI_API_KEY",
+    # OpenRouter is one gateway proxying many models (e.g.
+    # "openrouter/deepseek/deepseek-chat") -- same key regardless of which
+    # underlying model is requested through it. Matches the other agents'
+    # own OPENROUTER_API_KEY convention (see their settings.toml files).
+    "openrouter": "OPENROUTER_API_KEY",
 }
 
 
@@ -88,9 +93,14 @@ def generate_text(
     client_id: str,
     phase: str,
     lead_id: str | None = None,
-    max_tokens: int = 300,
+    max_tokens: int = 1024,
 ) -> str | None:
     """Generate a short natural-language completion via the active LLM.
+
+    `max_tokens` defaults higher than the "2-3 sentences" output actually
+    needs because "thinking" models (e.g. gemini-2.5-flash) count their
+    hidden reasoning tokens against the same budget -- a low limit silently
+    truncates the visible answer to a few words with no error raised.
 
     Traced as a Langfuse generation (B7) with the required
     agent_name/client_id/phase/model_used metadata, and logged through the
