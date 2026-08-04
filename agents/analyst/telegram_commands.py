@@ -163,7 +163,7 @@ def handle_text_command(
         return build_help_message()
 
     if command == "/health":
-        return f"Analyst health: ok\nclient_id: {active_client_id}"
+        return format_health_check()
 
     if command == "/report":
         with traced_action(
@@ -239,6 +239,44 @@ def handle_text_command(
         return format_observation_for_telegram(response)
 
     return "Unknown command. Use /help."
+
+
+def format_health_check() -> str:
+    """Check every dependency the Analyst relies on and format the result.
+
+    Args:
+        None.
+
+    Returns:
+        str: A French, emoji-flagged health summary (✅/❌ per dependency)
+        for PostgreSQL, Langfuse, and the active LLM provider. PostgreSQL
+        is checked live (bounded by the same 3s connect timeout
+        `common.db.get_engine()` already sets); Langfuse/LLM only check
+        whether a key is configured, no network call.
+    """
+
+    from common.db import is_database_reachable
+    from common.llm import active_model
+    from common.llm import is_configured as llm_is_configured
+
+    database_ok = is_database_reachable()
+    langfuse_ok = bool(settings.get("LANGFUSE_PUBLIC_KEY")) and bool(
+        settings.get("LANGFUSE_SECRET_KEY")
+    )
+    llm_ok = llm_is_configured()
+    provider_name = active_model().split("/", 1)[0].capitalize()
+
+    def _icon(ok: bool) -> str:
+        return "✅" if ok else "❌"
+
+    now = datetime.now(UTC)
+    return (
+        "🩺 État de l'Agent Analyst\n\n"
+        f"{_icon(database_ok)} PostgreSQL : {'OK' if database_ok else 'Injoignable'}\n"
+        f"{_icon(langfuse_ok)} Langfuse : {'OK' if langfuse_ok else 'Non configuré'}\n"
+        f"{_icon(llm_ok)} LLM ({provider_name}) : {'OK' if llm_ok else 'Non configuré'}\n\n"
+        f"🕐 {now.strftime('%Y-%m-%d %H:%M')} UTC"
+    )
 
 
 def build_help_message() -> str:

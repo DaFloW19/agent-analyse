@@ -11,15 +11,15 @@ from common.logging import log_action
 from config.settings import settings
 
 KPI_LABELS = {
-    "cpl": "CPL",
-    "cpq": "CPQ",
-    "cpql": "CPQL",
-    "cpbd": "CPBD",
-    "roas": "ROAS",
-    "stage_conversion_rate": "Stage conversion",
-    "time_to_first_contact": "Time to first contact",
-    "response_rate": "Response rate",
-    "meeting_show_rate": "Meeting show rate",
+    "cpl": "CPL (coût par lead)",
+    "cpq": "CPQ (coût par lead qualifié)",
+    "cpql": "CPQL (coût par vente qualifiée)",
+    "cpbd": "CPBD (coût par rendez-vous réservé)",
+    "roas": "ROAS (retour sur investissement publicitaire)",
+    "stage_conversion_rate": "Taux de conversion",
+    "time_to_first_contact": "Temps 1er contact",
+    "response_rate": "Taux de réponse",
+    "meeting_show_rate": "Taux de présence",
 }
 
 KPI_UNITS = {
@@ -33,6 +33,15 @@ KPI_UNITS = {
     "response_rate": "percent",
     "meeting_show_rate": "percent",
 }
+
+# Grouping used by format_report_for_telegram's two boxed sections.
+PERFORMANCE_KPIS = ["cpl", "cpq", "cpql", "cpbd", "roas"]
+CONVERSION_KPIS = [
+    "stage_conversion_rate",
+    "time_to_first_contact",
+    "response_rate",
+    "meeting_show_rate",
+]
 
 
 def build_phase_a_report() -> dict[str, dict[str, float | str | None]]:
@@ -157,27 +166,64 @@ def save_kpi_snapshots(
 
 
 def format_report_for_telegram(report: dict[str, dict[str, float | str | None]]) -> str:
-    """Format KPI report values for a compact Telegram response.
+    """Format the KPI report as a boxed, grouped, French Telegram message.
 
     Args:
         report: KPI report returned by `build_phase_a_report`, optionally
-            passed through `mark_stale` first.
+            passed through `mark_stale` and/or `attach_week_over_week` first.
 
     Returns:
-        str: Human-readable report text. Stale figures are flagged inline.
+        str: Human-readable French report text, grouped into "KPIs de
+        performance" (CPL/CPQ/CPQL/CPBD/ROAS) and "KPIs de conversion"
+        (the four rate/timing metrics), each line showing the working
+        (numerator/denominator) and, when present, the week-on-week delta.
+        Stale/simulated figures are flagged inline.
     """
 
-    lines = ["Analyst Phase B Report", f"Client: {settings.analyst.client_id}", ""]
-    for metric_name, result in report.items():
-        label = KPI_LABELS.get(metric_name, metric_name)
-        rendered_value = _format_metric_value(metric_name, result["value"])
-        stale_suffix = " [stale]" if result.get("stale") else ""
-        simulated_suffix = " (simulated)" if result.get("source") == "simulated" else ""
-        delta_suffix = _format_delta_suffix(metric_name, result)
-        lines.append(f"{label}: {rendered_value}{delta_suffix}{stale_suffix}{simulated_suffix}")
+    lines = [
+        "📊 Rapport KPI - Agent Analyst",
+        "",
+        "┌─────────────────────────",
+        "│ KPIs de performance",
+        "├─────────────────────────",
+    ]
+    lines.extend(
+        _format_kpi_line(name, report[name]) for name in PERFORMANCE_KPIS if name in report
+    )
     lines.append("")
-    lines.append(f"Data as of: {_oldest_report_timestamp(report)}")
+    lines.append("├─────────────────────────")
+    lines.append("│ KPIs de conversion")
+    lines.append("├─────────────────────────")
+    lines.extend(
+        _format_kpi_line(name, report[name]) for name in CONVERSION_KPIS if name in report
+    )
+    lines.append("")
+    lines.append("└─────────────────────────")
+    lines.append(f"🕐 Données du {_oldest_report_timestamp(report)}")
     return "\n".join(lines)
+
+
+def _format_kpi_line(metric_name: str, result: dict[str, float | str | None]) -> str:
+    """Render one KPI as a single French report line.
+
+    Args:
+        metric_name: Canonical KPI key.
+        result: KPI result, optionally carrying `stale`/`source`/
+            `previous_value` keys added by other reporting functions.
+
+    Returns:
+        str: `"{label}: {valeur}{delta}{alertes} (basé sur {num} / {denom})"`.
+    """
+
+    label = KPI_LABELS.get(metric_name, metric_name)
+    rendered_value = _format_metric_value(metric_name, result["value"])
+    delta_suffix = _format_delta_suffix(metric_name, result)
+    stale_suffix = " ⚠️ [périmé]" if result.get("stale") else ""
+    simulated_suffix = " (simulé)" if result.get("source") == "simulated" else ""
+    working_suffix = _format_working_suffix(result)
+    return (
+        f"{label}: {rendered_value}{delta_suffix}{stale_suffix}{simulated_suffix}{working_suffix}"
+    )
 
 
 def _format_delta_suffix(metric_name: str, result: dict[str, float | str | None]) -> str:
@@ -189,8 +235,8 @@ def _format_delta_suffix(metric_name: str, result: dict[str, float | str | None]
             by `attach_week_over_week` (None or absent = no prior snapshot).
 
     Returns:
-        str: A ` (delta vs last week)` suffix, or an empty string when no
-        prior snapshot exists or the current value itself is unavailable.
+        str: A ` (⬆️/⬇️/➡️ +delta%)`-style suffix, or an empty string when
+        no prior snapshot exists or the current value itself is unavailable.
     """
 
     if "previous_value" not in result:
@@ -199,14 +245,36 @@ def _format_delta_suffix(metric_name: str, result: dict[str, float | str | None]
     value = result.get("value")
     previous_value = result.get("previous_value")
     if value is None or previous_value is None:
-        return " (no prior snapshot)"
+        return " (pas de référence précédente)"
 
     delta = value - previous_value
-    arrow = "▲" if delta > 0 else "▼" if delta < 0 else "→"
+    arrow = "⬆️" if delta > 0 else "⬇️" if delta < 0 else "➡️"
+    sign = "+" if delta >= 0 else ""
     unit = KPI_UNITS.get(metric_name)
     if unit == "percent":
-        return f" ({arrow} {abs(delta):.2f}pp vs last week)"
-    return f" ({arrow} {abs(delta):.2f} vs last week)"
+        return f" ({arrow} {sign}{delta:.1f}%)"
+    return f" ({arrow} {sign}{delta:.2f})"
+
+
+def _format_working_suffix(result: dict[str, float | str | None]) -> str:
+    """Render the "(basé sur numérateur / dénominateur)" transparency suffix.
+
+    Args:
+        result: KPI result carrying `numerator`/`denominator`, as every
+            `common.metrics` function returns.
+
+    Returns:
+        str: `"  (basé sur X / Y)"`, or an empty string when the
+        denominator is zero or missing (nothing meaningful to show).
+    """
+
+    numerator = result.get("numerator")
+    denominator = result.get("denominator")
+    if not isinstance(numerator, (int, float)) or not isinstance(denominator, (int, float)):
+        return ""
+    if denominator == 0:
+        return ""
+    return f"  (basé sur {numerator:.1f} / {denominator:.0f})"
 
 
 def build_conversion_drop_alerts(
@@ -314,7 +382,7 @@ def build_phase_a_alerts(client_id: str | None = None) -> list[dict[str, float |
 
 
 def format_alerts_for_telegram(alerts: list[dict[str, float | int | str]]) -> str:
-    """Format conversion-drop alerts for Telegram.
+    """Format conversion-drop alerts for Telegram, in French.
 
     Args:
         alerts: Alert rows returned by `build_phase_a_alerts`.
@@ -325,24 +393,24 @@ def format_alerts_for_telegram(alerts: list[dict[str, float | int | str]]) -> st
 
     if not alerts:
         return (
-            "Conversion Alerts\n\n"
-            "No conversion drop above the alert threshold and volume floor detected."
+            "🔔 Alertes de conversion\n\n"
+            "Aucune chute de conversion au-dessus du seuil et du plancher de volume."
         )
 
-    lines = ["Conversion Alerts", ""]
+    lines = ["🔔 Alertes de conversion", ""]
     for alert in alerts:
         lines.extend(
             [
-                f"Alert: {alert['label']}",
-                f"Drop: {alert['previous_rate']:.2f}% -> {alert['current_rate']:.2f}%",
-                f"Change: -{alert['drop_pct']:.2f}%",
+                f"⚠️ Alerte : {alert['label']}",
+                f"Chute : {alert['previous_rate']:.2f}% → {alert['current_rate']:.2f}%",
+                f"Variation : -{alert['drop_pct']:.2f}%",
                 (
-                    "Volume: "
-                    f"{alert['previous_denominator']} leads previous week, "
-                    f"{alert['current_denominator']} leads current week"
+                    "Volume : "
+                    f"{alert['previous_denominator']} leads la semaine précédente, "
+                    f"{alert['current_denominator']} leads cette semaine"
                 ),
-                f"Data as of: {alert['data_as_of']}",
-                "Action: route to Commander for immediate review.",
+                f"Données du : {alert['data_as_of']}",
+                "Action : à transmettre au Commander pour revue immédiate.",
                 "",
             ]
         )
@@ -353,7 +421,7 @@ def format_weekly_report_for_telegram(
     report: dict[str, dict[str, float | str | None]],
     alerts: list[dict[str, float | int | str]],
 ) -> str:
-    """Format the weekly Analyst report with KPI dashboard and alerts.
+    """Format the weekly Analyst report with KPI dashboard and alerts, in French.
 
     Args:
         report: KPI report returned by `build_phase_a_report`.
@@ -364,11 +432,11 @@ def format_weekly_report_for_telegram(
     """
 
     kpi_lines = format_report_for_telegram(report).splitlines()
-    kpi_lines[0] = "Weekly Analyst Report"
+    kpi_lines[0] = "📊 Rapport hebdomadaire - Agent Analyst"
     alert_summary = (
-        "Immediate alerts: none"
+        "🔔 Alertes immédiates : aucune"
         if not alerts
-        else f"Immediate alerts: {len(alerts)} conversion drop detected"
+        else f"🔔 Alertes immédiates : {len(alerts)} chute(s) de conversion détectée(s)"
     )
     return "\n".join([*kpi_lines, "", alert_summary, "", format_alerts_for_telegram(alerts)])
 
@@ -385,7 +453,7 @@ def _format_metric_value(metric_name: str, value: float | str | None) -> str:
     """
 
     if value is None or isinstance(value, str):
-        return "no data"
+        return "Pas de données"
 
     unit = KPI_UNITS.get(metric_name)
     if unit == "cost":

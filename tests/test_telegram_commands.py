@@ -37,10 +37,12 @@ def test_handle_report_command_returns_phase_a_report():
     response = handle_text_command("/report", client_id="demo-real-estate")
     expected = pull_kpi_report()
 
-    assert "Analyst Phase B Report" in response
-    assert f"CPL: {expected['cpl']['value']:.2f}" in response
-    assert f"ROAS: {expected['roas']['value']:.2f}x" in response
-    assert f"Response rate: {expected['response_rate']['value']:.2f}%" in response
+    roas_label = "ROAS (retour sur investissement publicitaire)"
+
+    assert "Rapport KPI - Agent Analyst" in response
+    assert f"CPL (coût par lead): {expected['cpl']['value']:.2f}" in response
+    assert f"{roas_label}: {expected['roas']['value']:.2f}x" in response
+    assert f"Taux de réponse: {expected['response_rate']['value']:.2f}%" in response
 
 
 def test_handle_start_command_lists_commands_and_agents():
@@ -58,29 +60,29 @@ def test_handle_start_command_lists_commands_and_agents():
 def test_handle_alerts_command_returns_conversion_drop_alert():
     response = handle_text_command("/alerts", client_id="demo-real-estate")
 
-    assert "Conversion Alerts" in response
-    assert "Alert: New to MQL" in response
-    assert "Drop: 70.00% -> 30.00%" in response
-    assert "Action: route to Commander for immediate review." in response
+    assert "Alertes de conversion" in response
+    assert "Alerte : New to MQL" in response
+    assert "Chute : 70.00% → 30.00%" in response
+    assert "Action : à transmettre au Commander pour revue immédiate." in response
 
 
 def test_handle_optimisation_report_command_returns_recommendations():
     response = handle_text_command("/optimisation_report", client_id="demo-real-estate")
 
-    assert "WEEKLY OPTIMISATION REPORT" in response
-    assert "SCALE UP" in response
-    assert "PAUSE" in response
-    assert "REWRITE" in response
+    assert "Rapport hebdomadaire d'optimisation" in response
+    assert "AUGMENTER" in response
+    assert "METTRE EN PAUSE" in response
+    assert "RÉÉCRIRE" in response
 
 
 def test_handle_weekly_report_command_returns_kpis_and_alerts():
     response = handle_text_command("/weekly_report", client_id="demo-real-estate")
     expected = pull_kpi_report()
 
-    assert "Weekly Analyst Report" in response
-    assert f"CPL: {expected['cpl']['value']:.2f}" in response
-    assert "Immediate alerts: 1 conversion drop detected" in response
-    assert "Alert: New to MQL" in response
+    assert "Rapport hebdomadaire - Agent Analyst" in response
+    assert f"CPL (coût par lead): {expected['cpl']['value']:.2f}" in response
+    assert "Alertes immédiates : 1 chute(s) de conversion détectée(s)" in response
+    assert "Alerte : New to MQL" in response
 
 
 def test_handle_observe_command_writes_log(tmp_path):

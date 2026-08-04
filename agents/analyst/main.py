@@ -242,6 +242,7 @@ def status() -> StatusResponse:
     diagnostic endpoint, not one to poll tightly.
     """
 
+    from common.db import is_database_reachable
     from common.llm import active_model, is_configured
 
     client_id = settings.analyst.client_id
@@ -254,6 +255,7 @@ def status() -> StatusResponse:
         agent_name="analyst",
         crm_keeper_reachable=crm_keeper_reachable,
         media_buyer_reachable=media_buyer_reachable,
+        database_reachable=is_database_reachable(),
         llm_configured=is_configured(),
         llm_model=active_model(),
         langfuse_configured=langfuse_configured,

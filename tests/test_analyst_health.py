@@ -150,7 +150,7 @@ def test_weekly_report_endpoint_returns_report_text():
 
     body = response.json()
     assert response.status_code == 200
-    assert "WEEKLY OPTIMISATION REPORT" in body["report"]
+    assert "Rapport hebdomadaire d'optimisation" in body["report"]
 
 
 def test_status_endpoint_reports_configuration_and_reachability():
@@ -165,6 +165,7 @@ def test_status_endpoint_reports_configuration_and_reachability():
     # (see tests/conftest.py::_disable_live_agent_calls).
     assert body["crm_keeper_reachable"] is False
     assert body["media_buyer_reachable"] is False
+    assert isinstance(body["database_reachable"], bool)
     assert "llm_model" in body
     assert isinstance(body["llm_configured"], bool)
     assert isinstance(body["langfuse_configured"], bool)

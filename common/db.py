@@ -99,6 +99,28 @@ def get_engine() -> Engine:
     return _ENGINE
 
 
+def is_database_reachable() -> bool:
+    """Return whether the configured database accepts a trivial query.
+
+    Bounded by the same fast-fail connect timeout `get_engine()` already
+    sets for non-SQLite dialects (3s) -- a health check must never hang.
+
+    Returns:
+        bool: True if a `SELECT 1` succeeds, False on any error (including
+        the database being entirely unreachable). Never raises.
+    """
+
+    from sqlalchemy import text
+
+    try:
+        engine = get_engine()
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return True
+    except Exception:  # noqa: BLE001 - a health check must never crash or raise
+        return False
+
+
 def reset_engine_for_testing() -> None:
     """Drop the cached engine so the next `get_engine()` call rebuilds it.
 

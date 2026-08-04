@@ -68,7 +68,7 @@ def test_format_report_shows_week_over_week_delta():
 
     text = format_report_for_telegram(report)
 
-    assert "▲ 6.72 vs last week" in text
+    assert "⬆️ +6.72" in text
 
 
 def test_format_report_shows_no_prior_snapshot_when_previous_value_is_none():
@@ -84,7 +84,7 @@ def test_format_report_shows_no_prior_snapshot_when_previous_value_is_none():
 
     text = format_report_for_telegram(report)
 
-    assert "(no prior snapshot)" in text
+    assert "(pas de référence précédente)" in text
 
 
 def test_format_report_flags_simulated_source():
@@ -100,4 +100,4 @@ def test_format_report_flags_simulated_source():
 
     text = format_report_for_telegram(report)
 
-    assert "(simulated)" in text
+    assert "(simulé)" in text

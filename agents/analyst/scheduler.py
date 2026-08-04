@@ -9,15 +9,17 @@ for "sent to the Commander" until a real Commander agent exists.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from agents.analyst import content_strategist_notify
 from agents.analyst.attribution import attribution_breakdown
 from agents.analyst.data_pull import pull_kpi_report
 from agents.analyst.landing_pages import landing_page_performance
 from agents.analyst.reporting import (
+    attach_week_over_week,
     build_phase_a_alerts,
     format_alerts_for_telegram,
+    format_report_for_telegram,
     save_kpi_snapshots,
 )
 from agents.analyst.seed_data import load_seed_dataset
@@ -27,32 +29,45 @@ SendCallable = Callable[[str], Awaitable[None]]
 
 
 def build_weekly_optimisation_report(client_id: str | None = None) -> str:
-    """Build the weekly optimisation report with concrete recommendations.
+    """Build the weekly optimisation report: KPI dashboard + concrete recommendations.
+
+    Merges the same boxed, grouped French KPI dashboard `/report` shows
+    (`reporting.format_report_for_telegram`) with the Analyst's own
+    evidence-backed recommendations (scale/pause/rewrite) -- richer than a
+    KPI-only report, but just as readable.
 
     Args:
         client_id: Client identifier shown in the report header. Defaults
             to `settings.analyst.client_id`.
 
     Returns:
-        str: Telegram-ready report with one section per recommendation
-        category (scale, pause, rewrite), each carrying its supporting
-        figures. The Analyst never executes any of these recommendations.
+        str: Telegram-ready report. The Analyst never executes any of
+        these recommendations.
     """
 
     active_client_id = client_id or settings.analyst.client_id
     dataset = load_seed_dataset()
-    report = pull_kpi_report(dataset)
+    report = attach_week_over_week(pull_kpi_report(dataset), datetime.now(UTC), active_client_id)
 
     ad_set_attribution = attribution_breakdown(dataset.spend_rows, dataset.leads, "ad_set")
     campaign_attribution = attribution_breakdown(dataset.spend_rows, dataset.leads, "campaign")
     landing_pages = landing_page_performance(dataset.landing_page_rows)
     flagged_pages = [page for page in landing_pages if page["below_threshold"]]
 
+    now = datetime.now(UTC)
+    period_start = now - timedelta(days=7)
     lines = [
-        f"WEEKLY OPTIMISATION REPORT - {active_client_id}",
-        "The Analyst only recommends. Nothing below has been executed automatically.",
+        "📊 Rapport hebdomadaire d'optimisation - Agent Analyst",
+        f"📅 Période : {period_start.date()} → {now.date()}",
         "",
     ]
+    lines.extend(format_report_for_telegram(report).splitlines()[1:])
+    lines.append("")
+    lines.append(
+        "💡 L'Analyst ne fait que recommander. "
+        "Rien ci-dessous n'a été exécuté automatiquement."
+    )
+    lines.append("")
     lines.extend(_scale_recommendations(campaign_attribution))
     lines.extend(_pause_recommendations(ad_set_attribution))
     lines.extend(_rewrite_recommendations(landing_pages))
@@ -61,36 +76,25 @@ def build_weekly_optimisation_report(client_id: str | None = None) -> str:
         notified = content_strategist_notify.notify_content_strategist_of_flagged_pages(
             flagged_pages, active_client_id
         )
-        lines.append("CONTENT STRATEGIST NOTIFICATION")
+        lines.append("📣 NOTIFICATION CONTENT STRATEGIST")
         lines.append(
-            f"- {len(notified)} of {len(flagged_pages)} flagged page(s) acknowledged "
-            "(best-effort - their system has no page identifier yet, so this match only "
-            "exists in our own logs)"
+            f"- {len(notified)}/{len(flagged_pages)} page(s) signalée(s) acquittée(s) "
+            "(best-effort - leur système n'a pas encore d'identifiant de page, donc cette "
+            "correspondance n'existe que dans nos propres logs)"
         )
         lines.append("")
-
-    overall_roas = report["roas"]["value"]
-    lines.append("OVERALL PERFORMANCE")
-    if overall_roas is not None:
-        lines.append(
-            f"- ROAS (Return on Ad Spend): {overall_roas:.2f}x "
-            f"- every 1 unit of ad spend returned {overall_roas:.2f}"
-        )
-    else:
-        lines.append("- ROAS (Return on Ad Spend): no data")
-    lines.append("")
 
     summary = _generate_plain_language_summary(
         client_id=active_client_id,
         scale_key=_best_attributed_key(campaign_attribution),
         pause_key=_worst_attributed_key(ad_set_attribution),
         flagged_pages=flagged_pages,
-        overall_roas=overall_roas,
+        overall_roas=report["roas"]["value"],
     )
     from common.llm import active_model
 
-    lines.append(f"AI SUMMARY ({active_model()})")
-    lines.append(summary or "unavailable (LLM not configured or unreachable)")
+    lines.append(f"💡 Résumé IA ({active_model()})")
+    lines.append(summary or "indisponible (LLM non configuré ou injoignable)")
 
     return "\n".join(lines)
 
@@ -124,19 +128,19 @@ def _generate_plain_language_summary(
     from common.llm import generate_text
 
     system_prompt = (
-        "You are the Analyst agent's reporting assistant. Summarise this week's "
-        "optimisation report in 2 to 3 concise sentences for a non-technical "
-        "operator. Only reference the campaign, ad set, pages, and figures given "
-        "below -- never invent one that is not explicitly provided."
+        "Tu es l'assistant de reporting de l'agent Analyst. Résume le rapport "
+        "d'optimisation de cette semaine en 2 à 3 phrases concises, en français, "
+        "pour un opérateur non technique. Ne mentionne que la campagne, l'ad set, "
+        "les pages et les chiffres donnés ci-dessous -- n'en invente jamais."
     )
-    rewrite_text = ", ".join(page["landing_page"] for page in flagged_pages) or "none"
-    roas_text = f"{overall_roas:.2f}x" if overall_roas is not None else "no data"
+    rewrite_text = ", ".join(page["landing_page"] for page in flagged_pages) or "aucune"
+    roas_text = f"{overall_roas:.2f}x" if overall_roas is not None else "pas de données"
     user_prompt = (
-        f"Client: {client_id}\n"
-        f"Recommended to scale: {scale_key or 'none'}\n"
-        f"Recommended to pause: {pause_key or 'none'}\n"
-        f"Landing pages to rewrite: {rewrite_text}\n"
-        f"Overall ROAS: {roas_text}"
+        f"Client : {client_id}\n"
+        f"Campagne à augmenter : {scale_key or 'aucune'}\n"
+        f"Ad set à mettre en pause : {pause_key or 'aucun'}\n"
+        f"Pages à réécrire : {rewrite_text}\n"
+        f"ROAS global : {roas_text}"
     )
     return generate_text(
         system_prompt=system_prompt,
@@ -161,17 +165,17 @@ def _scale_recommendations(campaign_attribution: dict) -> list[str]:
     key = _best_attributed_key(campaign_attribution)
     if key is None:
         return [
-            "SCALE UP - increase budget on this campaign",
-            "- No campaign has enough SQL volume yet to recommend scaling.",
+            "⬆️ AUGMENTER - le budget de cette campagne",
+            "- Aucune campagne n'a encore assez de volume SQL pour recommander une hausse.",
             "",
         ]
 
     cpql_value = campaign_attribution["by_group"][key]["cpql"]["value"]
     return [
-        "SCALE UP - increase budget on this campaign",
-        f"- Campaign: {key}",
-        f"- Cost per SQL (CPQL): {cpql_value:.2f}",
-        "- Why: the lowest cost per qualified sale across all attributed campaigns",
+        "⬆️ AUGMENTER - le budget de cette campagne",
+        f"- Campagne : {key}",
+        f"- Coût par SQL (CPQL) : {cpql_value:.2f}",
+        "- Pourquoi : le coût par vente qualifiée le plus bas parmi les campagnes suivies",
         "",
     ]
 
@@ -190,20 +194,20 @@ def _pause_recommendations(ad_set_attribution: dict) -> list[str]:
     key = _worst_attributed_key(ad_set_attribution)
     if key is None:
         return [
-            "PAUSE - stop spending on this ad set",
-            "- No attributed ad set stands out as underperforming.",
+            "⏸️ METTRE EN PAUSE - cet ad set",
+            "- Aucun ad set attribué ne se distingue comme sous-performant.",
             "",
         ]
 
     group = ad_set_attribution["by_group"][key]
     cpql_value = group["cpql"]["value"]
-    cpql_text = "no SQL leads yet" if cpql_value is None else f"{cpql_value:.2f}"
+    cpql_text = "aucun lead SQL encore" if cpql_value is None else f"{cpql_value:.2f}"
     return [
-        "PAUSE - stop spending on this ad set",
-        f"- Ad set: {key}",
-        f"- Cost per SQL (CPQL): {cpql_text}",
-        f"- Cost per lead (CPL): {group['cpl']['value']:.2f}",
-        "- Why: the highest cost per qualified sale across all attributed ad sets",
+        "⏸️ METTRE EN PAUSE - cet ad set",
+        f"- Ad set : {key}",
+        f"- Coût par SQL (CPQL) : {cpql_text}",
+        f"- Coût par lead (CPL) : {group['cpl']['value']:.2f}",
+        "- Pourquoi : le coût par vente qualifiée le plus élevé parmi les ad sets suivis",
         "",
     ]
 
@@ -239,18 +243,18 @@ def _rewrite_recommendations(landing_pages: list[dict]) -> list[str]:
     flagged = [page for page in landing_pages if page["below_threshold"]]
     if not flagged:
         return [
-            "REWRITE - underperforming landing pages",
-            "- No landing page is below the 15% visitor-to-form threshold.",
+            "✏️ RÉÉCRIRE - pages sous-performantes",
+            "- Aucune landing page n'est sous le seuil de 15% visiteur-vers-formulaire.",
             "",
         ]
 
-    lines = ["REWRITE - these landing pages are underperforming"]
+    lines = ["✏️ RÉÉCRIRE - ces landing pages sous-performent"]
     for page in flagged:
-        lines.append(f"- Page: {page['landing_page']}")
+        lines.append(f"- Page : {page['landing_page']}")
         lines.append(
-            f"  Conversion rate: {page['conversion_rate_pct']:.2f}% "
-            f"({page['form_submissions']} form submissions out of {page['visitors']} visitors) "
-            "- below the 15% minimum threshold"
+            f"  Taux de conversion : {page['conversion_rate_pct']:.2f}% "
+            f"({page['form_submissions']} formulaires soumis sur {page['visitors']} visiteurs) "
+            "- sous le seuil minimum de 15%"
         )
     lines.append("")
     return lines

@@ -128,6 +128,7 @@ class StatusResponse(BaseModel):
     agent_name: str
     crm_keeper_reachable: bool
     media_buyer_reachable: bool
+    database_reachable: bool
     llm_configured: bool
     llm_model: str
     langfuse_configured: bool

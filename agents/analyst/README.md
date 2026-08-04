@@ -70,6 +70,8 @@ python -m agents.analyst.telegram_bot
 
 Starting the bot also starts two background jobs, both sending to `TELEGRAM_ALLOWED_CHAT_ID` if set: the weekly optimisation report (every Monday 08:00, also snapshots this week's KPIs for next week's delta), and an anomaly watch (every 6 hours, silent unless a conversion-drop alert actually fires).
 
+All Telegram-facing reports (`/report`, `/weekly_report`, `/alerts`, `/optimisation_report`, `/health`) are in French, with a boxed layout (`┌/├/└`) and emoji flags (`⬆️/⬇️/➡️` for week-on-week deltas, `⚠️ [périmé]` for stale data, `(simulé)` for simulated KPIs) so a non-technical operator can read them unaided. Every KPI acronym is spelled out next to its value (e.g. `CPQL (coût par vente qualifiée)`).
+
 Commands:
 
 ```text
@@ -100,7 +102,7 @@ Tests always run against an in-memory SQLite database (see `tests/conftest.py`),
 - **Content Strategist notification is best-effort and cannot correlate a page.** Its `/cro-analysis` endpoint accepts only `{"conversion_rate": float}` — no page identifier, no `client_id` (verified against its actual code). The Analyst still calls it per flagged page and logs the generic advice it returns, but Content Strategist itself has no way to know which page the number belongs to. Needs a `page_id`/`client_id` field added to their `LandingPagePerformance` model to become a real integration.
 - **The weekly optimisation report is not delivered to a real Commander.** Commander's `POST /event` routes an event *to* another agent (`target_agent` must be a key in its own agent registry) — it isn't designed to *receive* a report addressed to itself, and `POST /text` runs input through its LLM intent classifier and operator memory, which doesn't fit a structured report either (verified against its actual `api.py`/`core/agent.py`). The report keeps going to Telegram, explicitly labeled "for Commander review", until Commander exposes an intake endpoint suited for this.
 - The weekly optimisation report's "scale"/"pause" recommendations are based on CPQL only; richer criteria (statistical confidence, minimum conversions) are Phase C (MB-03-equivalent) work.
-- Without an API key set for the active `LLM_MODEL` provider (`DEEPSEEK_API_KEY` by default), the weekly report's plain-language summary shows "unavailable" instead of generated text — this is a clean no-op, not an error.
+- Without an API key set for the active `LLM_MODEL` provider (`DEEPSEEK_API_KEY` by default), the weekly report's plain-language summary shows "indisponible" instead of generated text — this is a clean no-op, not an error.
 
 ## Inputs and outputs
 
