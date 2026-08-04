@@ -2,8 +2,11 @@
 
 Produces a reproducible dataset for one fictional real-estate client so that
 reporting, attribution, and landing-page code can be built and tested
-against realistic volume. The same `seed` always produces byte-identical
-output.
+against realistic volume. For a given `ANCHOR_AT`, the same `seed` always
+produces byte-identical output; `ANCHOR_AT` itself is pinned to process
+start time (see below) so the simulated data's `data_as_of` never looks
+stale in a long-running report, at the cost of the dataset shifting by a
+few hours/days between one process run and the next.
 
 Landing-page visitor and submission counts are aggregate web-analytics
 numbers and are intentionally not reconciled 1:1 with the per-lead
@@ -17,7 +20,11 @@ import random
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-ANCHOR_AT = datetime(2026, 7, 29, 10, 0, 0, tzinfo=UTC)
+# Pinned once at import time (not recomputed per call) so a single process
+# run stays internally consistent/deterministic, while still keeping the
+# simulated data looking current across restarts -- unlike a hardcoded date,
+# which drifts further into the past every day the server keeps running.
+ANCHOR_AT = datetime.now(UTC)
 WEEKS_OF_HISTORY = 8
 LEAD_COUNT = 400
 
