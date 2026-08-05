@@ -31,7 +31,7 @@ def log_action(
     model_used: str,
     latency_ms: int,
     timestamp: str | None = None,
-    path: str | Path = "logs/agent_actions.jsonl",
+    path: str | Path | None = None,
     extra_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write one mandatory-format action log entry to an append-only JSONL file.
@@ -46,7 +46,9 @@ def log_action(
         model_used: Model name, or `rule-based` for hardcoded Phase B logic.
         latency_ms: Total action latency in milliseconds.
         timestamp: ISO 8601 timestamp. Generated in UTC when omitted.
-        path: JSONL destination path.
+        path: JSONL destination path. Defaults to `logs/{agent_name}.jsonl`
+            so every agent keeps its own append-only history file (Phase A
+            requirement) without every caller having to know the convention.
         extra_fields: Optional extra fields such as error metadata.
 
     Returns:
@@ -72,8 +74,9 @@ def log_action(
         entry.update(extra_fields)
 
     validate_log_entry(entry)
-    _write_jsonl(entry, path)
-    _write_to_central_store(entry, path)
+    resolved_path = path if path is not None else Path(f"logs/{agent_name}.jsonl")
+    _write_jsonl(entry, resolved_path)
+    _write_to_central_store(entry, resolved_path)
     return entry
 
 

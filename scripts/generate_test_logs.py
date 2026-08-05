@@ -82,12 +82,16 @@ SIMULATED_ACTIONS = [
 
 
 def generate_test_logs(
-    path: str = "logs/simulated_agents.jsonl", client_id: str = CLIENT_ID
+    path: str | None = None, client_id: str = CLIENT_ID
 ) -> list[dict]:
     """Write one simulated log entry per non-Analyst agent.
 
     Args:
-        path: JSONL destination path for the simulated entries.
+        path: JSONL destination path for the simulated entries. Defaults to
+            `None`, which lets each entry land in its own `logs/{agent_name}.jsonl`
+            (see `common.logging.log_action`) -- one history file per agent,
+            same as a real agent would get. Pass an explicit path (e.g. in
+            tests) to force every entry into a single shared file instead.
         client_id: Client identifier stamped on every simulated entry. Callers
             that need to isolate one run's rows in `agent_logs` (e.g. tests
             sharing a session-scoped database) should pass a unique value.
@@ -106,7 +110,7 @@ def main() -> None:
     """Generate the simulated logs and report where they landed."""
 
     entries = generate_test_logs()
-    print(f"{len(entries)} simulated logs written to logs/simulated_agents.jsonl and agent_logs.")
+    print(f"{len(entries)} simulated logs written, one per agent under logs/, and to agent_logs.")
     for entry in entries:
         print(f"  - {entry['agent_name']}: {entry['action_type']}")
 
