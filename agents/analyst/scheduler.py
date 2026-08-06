@@ -11,9 +11,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
-from agents.analyst import content_strategist_notify
+from agents.analyst import content_strategist_notify, conversion_api
 from agents.analyst.attribution import attribution_breakdown
 from agents.analyst.data_pull import pull_kpi_report
+from agents.analyst.eval_job import run_weekly_eval_job
 from agents.analyst.landing_pages import landing_page_performance
 from agents.analyst.reporting import (
     attach_week_over_week,
@@ -84,13 +85,20 @@ def build_weekly_optimisation_report(client_id: str | None = None) -> str:
         )
         lines.append("")
 
+    overall_roas = report["roas"]["value"]
     summary = _generate_plain_language_summary(
         client_id=active_client_id,
         scale_key=_best_attributed_key(campaign_attribution),
         pause_key=_worst_attributed_key(ad_set_attribution),
         flagged_pages=flagged_pages,
-        overall_roas=report["roas"]["value"],
+        overall_roas=overall_roas,
     )
+    # C6 (Analyst-only scope): score the summary itself, not another LLM call
+    # judging it -- see eval_job.py's docstring for why this only covers the
+    # Analyst's own LLM call, not the other 6 agents.
+    source_figures = {"roas": overall_roas} if overall_roas is not None else {}
+    run_weekly_eval_job(summary, source_figures, active_client_id)
+
     from common.llm import active_model
 
     lines.append(f"💡 Résumé IA ({active_model()})")
@@ -296,13 +304,29 @@ async def run_anomaly_watch_job(send: SendCallable, client_id: str | None = None
         await send(format_alerts_for_telegram(alerts))
 
 
+async def run_conversion_api_job(client_id: str | None = None) -> None:
+    """Build and log the weekly Conversion API payload (Phase C, C1).
+
+    Log-only, unlike the other two jobs -- there is nothing to send to an
+    operator here, only an audit trail of what *would* be pushed. See
+    `agents/analyst/conversion_api.py` for why this never calls Media
+    Buyer's real endpoint.
+
+    Args:
+        client_id: Client identifier. Defaults to `settings.analyst.client_id`.
+    """
+
+    active_client_id = client_id or settings.analyst.client_id
+    conversion_api.run_conversion_api_push_job(load_seed_dataset(), active_client_id)
+
+
 def start_scheduler(send: SendCallable, client_id: str | None = None) -> object:
-    """Start the Analyst's two background jobs: weekly report and anomaly watch.
+    """Start the Analyst's background jobs: weekly report, anomaly watch, Conversion API.
 
     Args:
         send: Async callable that delivers report/alert text (e.g. a
             Telegram send-message coroutine).
-        client_id: Client identifier passed through to both jobs.
+        client_id: Client identifier passed through to every job.
 
     Returns:
         object: The running `AsyncIOScheduler` instance, so the caller can
@@ -321,6 +345,10 @@ def start_scheduler(send: SendCallable, client_id: str | None = None) -> object:
     scheduler.add_job(
         lambda: run_anomaly_watch_job(send, client_id),
         IntervalTrigger(hours=6),
+    )
+    scheduler.add_job(
+        lambda: run_conversion_api_job(client_id),
+        CronTrigger(day_of_week="mon", hour=8, minute=5),
     )
     scheduler.start()
     return scheduler

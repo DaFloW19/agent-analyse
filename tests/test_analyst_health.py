@@ -169,3 +169,59 @@ def test_status_endpoint_reports_configuration_and_reachability():
     assert "llm_model" in body
     assert isinstance(body["llm_configured"], bool)
     assert isinstance(body["langfuse_configured"], bool)
+
+
+def test_predictive_roas_endpoint_returns_a_range():
+    client = TestClient(app)
+
+    response = client.get("/predictive-roas")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["sufficient_data"] is True
+    assert body["projected_revenue_low"] <= body["projected_revenue_high"]
+
+
+def test_cohorts_endpoint_defaults_to_campaign_grouping():
+    client = TestClient(app)
+
+    response = client.get("/cohorts")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["group_by"] == "campaign"
+    assert body["ranked"][0] == "google_search_intent"
+
+
+def test_conversion_api_payload_endpoint_is_always_dry_run():
+    client = TestClient(app)
+
+    response = client.get("/conversion-api-payload")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["dry_run"] is True
+    assert len(body["pushed"]) > 0
+
+
+def test_scoring_feedback_endpoint_names_the_overweighted_dimension():
+    client = TestClient(app)
+
+    response = client.get("/scoring-feedback")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["proposals"][0]["dimension"] == "contactability"
+
+
+def test_ab_tests_endpoint_returns_one_result_per_variant_group():
+    client = TestClient(app)
+
+    response = client.get("/ab-tests")
+
+    body = response.json()
+    assert response.status_code == 200
+    statuses = {result["variant_group_id"]: result["status"] for result in body["results"]}
+    assert statuses["vg_hero_copy"] == "winner"
+    assert statuses["vg_cta_button"] == "no_winner"
+    assert statuses["vg_headline"] == "insufficient_data"

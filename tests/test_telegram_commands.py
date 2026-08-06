@@ -85,6 +85,45 @@ def test_handle_weekly_report_command_returns_kpis_and_alerts():
     assert "Alerte : New to MQL" in response
 
 
+def test_handle_predictive_roas_command_returns_a_range():
+    response = handle_text_command("/predictive_roas", client_id="demo-real-estate")
+
+    assert "ROAS prédictif" in response
+    assert "Revenu projeté" in response
+
+
+def test_handle_cohorts_command_names_the_best_campaign():
+    response = handle_text_command("/cohorts", client_id="demo-real-estate")
+
+    assert "Analyse de cohortes" in response
+    assert "1. google_search_intent" in response
+
+
+def test_handle_conversion_api_command_is_always_dry_run():
+    response = handle_text_command("/conversion_api", client_id="demo-real-estate")
+
+    assert "Aperçu Conversion API" in response
+    assert "Mode dry-run" in response
+
+
+def test_handle_scoring_feedback_command_names_the_overweighted_dimension():
+    response = handle_text_command("/scoring_feedback", client_id="demo-real-estate")
+
+    assert "Feedback de scoring" in response
+    assert "contactability" in response
+    assert "diminuer ce poids" in response
+
+
+def test_handle_ab_tests_command_shows_all_three_outcomes():
+    response = handle_text_command("/ab_tests", client_id="demo-real-estate")
+
+    assert "vg_hero_copy" in response
+    assert "vg_cta_button" in response
+    assert "vg_headline" in response
+    assert "🏆" in response
+    assert "données insuffisantes" in response
+
+
 def test_handle_observe_command_writes_log(tmp_path):
     log_path = tmp_path / "analyst.jsonl"
 

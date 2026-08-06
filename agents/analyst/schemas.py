@@ -132,3 +132,114 @@ class StatusResponse(BaseModel):
     llm_configured: bool
     llm_model: str
     langfuse_configured: bool
+
+
+class PredictiveRoasResponse(BaseModel):
+    """Predictive ROAS projection response (Phase C, C2).
+
+    A range, never a single number -- `sufficient_data` is False (with only
+    `pipeline_volume` populated below) when the current SQL pipeline is
+    below the ANA-03 volume floor, rather than fabricating a projection.
+    """
+
+    agent_name: str
+    client_id: str
+    sufficient_data: bool
+    pipeline_volume: int
+    days: int
+    booking_rate: dict[str, float | None] | None = None
+    close_rate: dict[str, float | None] | None = None
+    avg_contract_value: float | None = None
+    projected_revenue_low: float | None = None
+    projected_revenue_high: float | None = None
+    assumptions: list[str] = Field(default_factory=list)
+
+
+class CohortResult(BaseModel):
+    """One cohort's lead volume and outcome rates (Phase C, C3)."""
+
+    lead_count: int
+    sql_rate_pct: float | None
+    closed_won_rate_pct: float | None
+
+
+class CohortsResponse(BaseModel):
+    """Cohort analysis response (Phase C, C3).
+
+    `insufficient` lists cohort keys below the ANA-03 volume floor -- still
+    present in `cohorts` for transparency, but never in `ranked`.
+    """
+
+    agent_name: str
+    client_id: str
+    group_by: str
+    cohorts: dict[str, CohortResult]
+    ranked: list[str]
+    insufficient: list[str]
+
+
+class ConversionApiPayloadRow(BaseModel):
+    """One closed-won deal ready for the Conversion API push (Phase C, C1)."""
+
+    lead_id: str
+    click_id: str
+    click_id_platform: str | None
+    contract_value: float
+    closed_at: str
+
+
+class ConversionApiResponse(BaseModel):
+    """Conversion API payload preview response (Phase C, C1).
+
+    Read-only preview of what the weekly job would build. `dry_run` is
+    always True -- see `agents/analyst/conversion_api.py` for why this
+    never calls Media Buyer's real endpoint.
+    """
+
+    agent_name: str
+    client_id: str
+    pushed: list[ConversionApiPayloadRow]
+    excluded_no_click_id: int
+    dry_run: bool
+
+
+class ScoringProposal(BaseModel):
+    """One scoring-dimension recalibration proposal (Phase C, C4). Never auto-applied."""
+
+    dimension: str
+    current_weight: float
+    scoring_model_version: str | None
+    evidence: dict[str, float | int]
+    suggested_direction: str
+
+
+class ScoringFeedbackResponse(BaseModel):
+    """Scoring model feedback response (Phase C, C4)."""
+
+    agent_name: str
+    client_id: str
+    proposals: list[ScoringProposal]
+
+
+class AbTestResult(BaseModel):
+    """One A/B variant group's evaluation result (Phase C, C5).
+
+    `status` is `"insufficient_data"`, `"no_winner"` (see `variant_a`/
+    `variant_b`), or `"winner"` (see `winner_asset_id`/`p_value`).
+    """
+
+    variant_group_id: str
+    status: str
+    winner_asset_id: str | None = None
+    winner_variant: str | None = None
+    p_value: float | None = None
+    variant_a: dict[str, Any] | None = None
+    variant_b: dict[str, Any] | None = None
+
+
+class AbTestsResponse(BaseModel):
+    """A/B test conclusions response (Phase C, C5)."""
+
+    agent_name: str
+    client_id: str
+    results: list[AbTestResult]

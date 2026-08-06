@@ -8,9 +8,13 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from agents.analyst import live_data
+from agents.analyst.ab_test_conclusions import evaluate_ab_tests
 from agents.analyst.agent import AnalystAgent
 from agents.analyst.attribution import AttributionKey, attribution_breakdown
+from agents.analyst.cohort_analysis import CohortKey, cohort_breakdown
+from agents.analyst.conversion_api import build_conversion_api_payload
 from agents.analyst.landing_pages import landing_page_performance
+from agents.analyst.predictive_roas import project_roas
 from agents.analyst.reporting import (
     attach_week_over_week,
     build_phase_a_alerts,
@@ -18,15 +22,21 @@ from agents.analyst.reporting import (
 )
 from agents.analyst.scheduler import build_weekly_optimisation_report
 from agents.analyst.schemas import (
+    AbTestsResponse,
     AlertsResponse,
     AttributionResponse,
+    CohortsResponse,
+    ConversionApiResponse,
     LandingPagesResponse,
     ObservationRequest,
     ObservationResponse,
+    PredictiveRoasResponse,
     ReportResponse,
+    ScoringFeedbackResponse,
     StatusResponse,
     WeeklyReportResponse,
 )
+from agents.analyst.scoring_feedback import build_calibration_proposals
 from agents.analyst.seed_data import load_seed_dataset
 from common.logging import log_action
 from common.tracing import traced_action
@@ -260,3 +270,145 @@ def status() -> StatusResponse:
         llm_model=active_model(),
         langfuse_configured=langfuse_configured,
     )
+
+
+@app.get("/predictive-roas", response_model=PredictiveRoasResponse)
+def predictive_roas(days: int = 30) -> PredictiveRoasResponse:
+    """Project expected closed-won revenue over the next `days` days (Phase C, C2)."""
+
+    client_id = settings.analyst.client_id
+    with traced_action(
+        agent_name="analyst",
+        client_id=client_id,
+        phase="phase_c_predictive_roas",
+        model_used="rule-based",
+    ):
+        started_at = perf_counter()
+        dataset = load_seed_dataset()
+        result = project_roas(dataset, days=days, client_id=client_id)
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        log_action(
+            agent_name="analyst",
+            action_type="get_predictive_roas",
+            input_summary=f"Projected revenue over the next {days} days",
+            output_summary=f"sufficient_data={result['sufficient_data']}",
+            lead_id=None,
+            client_id=client_id,
+            model_used="rule-based",
+            latency_ms=latency_ms,
+            path=app.state.log_path,
+        )
+        return PredictiveRoasResponse(agent_name="analyst", **result)
+
+
+@app.get("/cohorts", response_model=CohortsResponse)
+def cohorts(group_by: CohortKey = "campaign") -> CohortsResponse:
+    """Break lead quality and closed-won outcomes down by cohort (Phase C, C3)."""
+
+    client_id = settings.analyst.client_id
+    with traced_action(
+        agent_name="analyst",
+        client_id=client_id,
+        phase="phase_c_cohorts",
+        model_used="rule-based",
+    ):
+        started_at = perf_counter()
+        dataset = load_seed_dataset()
+        result = cohort_breakdown(dataset, group_by=group_by)
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        log_action(
+            agent_name="analyst",
+            action_type="get_cohorts",
+            input_summary=f"group_by={group_by}",
+            output_summary=(
+                f"{len(result['ranked'])} ranked, {len(result['insufficient'])} insufficient"
+            ),
+            lead_id=None,
+            client_id=client_id,
+            model_used="rule-based",
+            latency_ms=latency_ms,
+            path=app.state.log_path,
+        )
+        return CohortsResponse(agent_name="analyst", client_id=client_id, **result)
+
+
+@app.get("/conversion-api-payload", response_model=ConversionApiResponse)
+def conversion_api_payload() -> ConversionApiResponse:
+    """Preview the weekly Conversion API payload, read-only (Phase C, C1).
+
+    Always `dry_run=True` -- see `agents/analyst/conversion_api.py` for why
+    this never calls Media Buyer's real endpoint. Read-only: does not log
+    the way the real Monday job (`scheduler.run_conversion_api_push_job`)
+    does, to avoid noisy duplicate log rows from repeated manual calls.
+    """
+
+    client_id = settings.analyst.client_id
+    with traced_action(
+        agent_name="analyst",
+        client_id=client_id,
+        phase="phase_c_conversion_api",
+        model_used="rule-based",
+    ):
+        dataset = load_seed_dataset()
+        result = build_conversion_api_payload(dataset, client_id=client_id)
+        return ConversionApiResponse(agent_name="analyst", **result)
+
+
+@app.get("/scoring-feedback", response_model=ScoringFeedbackResponse)
+def scoring_feedback() -> ScoringFeedbackResponse:
+    """Return scoring-dimension recalibration proposals, never auto-applied (Phase C, C4)."""
+
+    client_id = settings.analyst.client_id
+    with traced_action(
+        agent_name="analyst",
+        client_id=client_id,
+        phase="phase_c_scoring_feedback",
+        model_used="rule-based",
+    ):
+        started_at = perf_counter()
+        dataset = load_seed_dataset()
+        proposals = build_calibration_proposals(dataset)
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        log_action(
+            agent_name="analyst",
+            action_type="get_scoring_feedback",
+            input_summary="Compared scoring dimensions against closed-deal outcomes",
+            output_summary=f"{len(proposals)} calibration proposal(s)",
+            lead_id=None,
+            client_id=client_id,
+            model_used="rule-based",
+            latency_ms=latency_ms,
+            path=app.state.log_path,
+        )
+        return ScoringFeedbackResponse(
+            agent_name="analyst", client_id=client_id, proposals=proposals
+        )
+
+
+@app.get("/ab-tests", response_model=AbTestsResponse)
+def ab_tests() -> AbTestsResponse:
+    """Evaluate every A/B variant group for a statistically significant winner (Phase C, C5)."""
+
+    client_id = settings.analyst.client_id
+    with traced_action(
+        agent_name="analyst",
+        client_id=client_id,
+        phase="phase_c_ab_tests",
+        model_used="rule-based",
+    ):
+        started_at = perf_counter()
+        dataset = load_seed_dataset()
+        results = evaluate_ab_tests(dataset)
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        log_action(
+            agent_name="analyst",
+            action_type="get_ab_tests",
+            input_summary="Evaluated every A/B variant group",
+            output_summary=f"{len(results)} group(s) evaluated",
+            lead_id=None,
+            client_id=client_id,
+            model_used="rule-based",
+            latency_ms=latency_ms,
+            path=app.state.log_path,
+        )
+        return AbTestsResponse(agent_name="analyst", client_id=client_id, results=results)

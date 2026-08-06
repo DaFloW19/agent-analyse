@@ -38,6 +38,21 @@ LANDING_PAGES = ["lp_buyers_v1", "lp_buyers_v2"]
 BAD_AD_SET = "adset_retarget_bad"
 ZERO_SPEND_DAY_INDEX = 10
 
+# Deliberately the best-performing campaign (higher score floor below), so
+# cohort analysis (C3) has a reproducible best performer instead of relying
+# on incidental RNG luck -- same convention as BAD_AD_SET.
+STRONG_CAMPAIGN = "google_search_intent"
+CLICK_ID_CAPTURE_RATE = 0.85
+SCORING_DIMENSION_WEIGHTS = {
+    "budget_fit": 0.25,
+    "urgency": 0.15,
+    "engagement": 0.25,
+    # Deliberately the highest-weighted dimension despite being uncorrelated
+    # with actually closing (see _build_scoring_run_rows) -- gives C4's
+    # calibration-feedback logic a real, deterministic miscalibration to find.
+    "contactability": 0.35,
+}
+
 
 @dataclass(frozen=True)
 class SeedDataset:
@@ -53,6 +68,12 @@ class SeedDataset:
         meeting_rows: Meeting show/no-show outcomes for booked leads.
         landing_page_rows: Visitor and submission counts per landing page.
         weekly_stage_conversion_rows: Week-on-week conversion rate snapshots.
+        scoring_run_rows: Simulated Qualifier scoring runs for SQL+ leads
+            (Phase C, C4 -- stands in for the Qualifier's real `scoring_runs`
+            table, which doesn't exist yet in their repo).
+        content_variant_rows: Simulated Content Strategist A/B variant
+            conversion rows (Phase C, C5 -- stands in for their real
+            `content_assets` table, which doesn't exist yet in their repo).
     """
 
     leads: list[dict]
@@ -64,6 +85,8 @@ class SeedDataset:
     meeting_rows: list[dict]
     landing_page_rows: list[dict]
     weekly_stage_conversion_rows: list[dict]
+    scoring_run_rows: list[dict]
+    content_variant_rows: list[dict]
 
 
 def generate_seed_dataset(seed: int = 42) -> SeedDataset:
@@ -96,6 +119,8 @@ def generate_seed_dataset(seed: int = 42) -> SeedDataset:
         meeting_rows=meeting_rows,
         landing_page_rows=_build_landing_page_rows(),
         weekly_stage_conversion_rows=_build_weekly_stage_conversion_rows(),
+        scoring_run_rows=_build_scoring_run_rows(rng, leads, deal_rows),
+        content_variant_rows=_build_content_variant_rows(),
     )
 
 
@@ -159,8 +184,18 @@ def _generate_leads(rng: random.Random) -> list[dict]:
             score = None
         elif ad_set == BAD_AD_SET:
             score = rng.randint(0, 35)
+        elif campaign == STRONG_CAMPAIGN:
+            score = rng.randint(25, 97)
         else:
             score = rng.randint(5, 97)
+
+        if rng.random() < CLICK_ID_CAPTURE_RATE:
+            click_id_platform = rng.choice(["meta", "google"])
+            prefix = "fb" if click_id_platform == "meta" else "gclid"
+            click_id = f"{prefix}.{index}.{rng.randint(10**9, 10**10 - 1)}"
+        else:
+            click_id_platform = None
+            click_id = None
 
         leads.append(
             {
@@ -170,6 +205,8 @@ def _generate_leads(rng: random.Random) -> list[dict]:
                 "ad_set": ad_set,
                 "creative_asset": creative_asset,
                 "landing_page": rng.choice(LANDING_PAGES),
+                "click_id": click_id,
+                "click_id_platform": click_id_platform,
                 "created_at": _iso(created_at),
                 "data_as_of": _iso(ANCHOR_AT),
             }
@@ -415,6 +452,136 @@ def _build_weekly_stage_conversion_rows() -> list[dict]:
             "current_rate": 15.0,
             "previous_denominator": 6,
             "current_denominator": 3,
+            "data_as_of": data_as_of,
+        },
+    ]
+
+
+def _build_scoring_run_rows(
+    rng: random.Random, leads: list[dict], deal_rows: list[dict]
+) -> list[dict]:
+    """Build simulated Qualifier scoring runs for SQL+ leads (Phase C, C4).
+
+    Stands in for the Qualifier's real `scoring_runs` table (QUA-01), which
+    doesn't exist in their repo yet. `contactability` is deliberately the
+    highest-weighted dimension (`SCORING_DIMENSION_WEIGHTS`) yet scored with
+    no relationship to whether the lead actually closed; `urgency` is
+    lower-weighted but scored to strongly track the real outcome. This gives
+    `scoring_feedback.py` a real, deterministic miscalibration to detect
+    (high weight, low outcome correlation) instead of relying on noise.
+
+    Args:
+        rng: Seeded random generator.
+        leads: Lead rows produced by `_generate_leads`.
+        deal_rows: Deal rows produced by `_build_deal_rows`, used to know
+            which leads actually closed won.
+
+    Returns:
+        list[dict]: One scoring run per SQL+ lead (score >= 61): `{lead_id,
+        scoring_model_version, weights_used, dimension_scores, total_score,
+        classification, created_at}`.
+    """
+
+    closed_won_lead_ids = {row["lead_id"] for row in deal_rows if row["status"] == "closed_won"}
+
+    rows = []
+    for lead in leads:
+        if lead["score"] is None or lead["score"] < 61:
+            continue
+
+        is_closed_won = lead["lead_id"] in closed_won_lead_ids
+        dimension_scores = {
+            "budget_fit": rng.randint(30, 90),
+            "urgency": rng.randint(70, 95) if is_closed_won else rng.randint(20, 55),
+            "engagement": rng.randint(30, 90),
+            # Deliberately uncorrelated with the real outcome -- same range
+            # regardless of is_closed_won.
+            "contactability": rng.randint(40, 90),
+        }
+        total_score = round(
+            sum(
+                SCORING_DIMENSION_WEIGHTS[dimension] * value
+                for dimension, value in dimension_scores.items()
+            ),
+            1,
+        )
+        rows.append(
+            {
+                "lead_id": lead["lead_id"],
+                "scoring_model_version": "1.0.0",
+                "weights_used": dict(SCORING_DIMENSION_WEIGHTS),
+                "dimension_scores": dimension_scores,
+                "total_score": total_score,
+                "classification": "sql",
+                "created_at": lead["created_at"],
+            }
+        )
+    return rows
+
+
+def _build_content_variant_rows() -> list[dict]:
+    """Build simulated Content Strategist A/B variant conversion rows (Phase C, C5).
+
+    Stands in for their real `content_assets` table (CCS-03), which doesn't
+    exist in their repo yet. Static, not RNG-derived, so the exact counts
+    below deterministically exercise CCS-03's three decision-rule branches.
+
+    Returns:
+        list[dict]: Three `variant_group_id` pairs -- a real 95%-confidence
+        winner at 40 conversions/variant, a marginal (non-significant) pair
+        also at 40 conversions/variant, and a pair at 20 conversions/variant
+        (below the 30-conversion floor, insufficient data regardless of its
+        rates).
+    """
+
+    data_as_of = _iso(ANCHOR_AT)
+    return [
+        {
+            "variant_group_id": "vg_hero_copy",
+            "asset_id": "asset_hero_copy_a",
+            "variant": "a",
+            "impressions": 200,
+            "conversions": 40,
+            "data_as_of": data_as_of,
+        },
+        {
+            "variant_group_id": "vg_hero_copy",
+            "asset_id": "asset_hero_copy_b",
+            "variant": "b",
+            "impressions": 200,
+            "conversions": 70,
+            "data_as_of": data_as_of,
+        },
+        {
+            "variant_group_id": "vg_cta_button",
+            "asset_id": "asset_cta_button_a",
+            "variant": "a",
+            "impressions": 200,
+            "conversions": 40,
+            "data_as_of": data_as_of,
+        },
+        {
+            "variant_group_id": "vg_cta_button",
+            "asset_id": "asset_cta_button_b",
+            "variant": "b",
+            "impressions": 200,
+            "conversions": 48,
+            "data_as_of": data_as_of,
+        },
+        {
+            "variant_group_id": "vg_headline",
+            "asset_id": "asset_headline_a",
+            "variant": "a",
+            "impressions": 100,
+            "conversions": 20,
+            "data_as_of": data_as_of,
+        },
+        {
+            "variant_group_id": "vg_headline",
+            "asset_id": "asset_headline_b",
+            "variant": "b",
+            "impressions": 100,
+            "conversions": 22,
             "data_as_of": data_as_of,
         },
     ]

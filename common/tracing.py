@@ -127,3 +127,45 @@ def _log_tracing_failure(
         latency_ms=0,
         extra_fields={"error_type": type(exc).__name__, "error_message": str(exc)},
     )
+
+
+def record_score(
+    *,
+    name: str,
+    value: float,
+    client_id: str,
+    comment: str | None = None,
+    agent_name: str = "analyst",
+) -> None:
+    """Attach a numeric score to Langfuse (e.g. an eval job result), no-op-safe.
+
+    A clean no-op when Langfuse is unconfigured, same as `traced_action`. A
+    failure to reach a *configured* Langfuse host is caught and logged
+    through `common.logging.log_action`, never raised (C6).
+
+    Args:
+        name: Score name (e.g. `"weekly_summary_quality"`).
+        value: Score value.
+        client_id: Client identifier, used for the failure log entry.
+        comment: Optional human-readable explanation of the score.
+        agent_name: Name of the agent recording the score.
+    """
+
+    client = get_langfuse_client()
+    if client is None:
+        return
+
+    try:
+        client.create_score(name=name, value=value, comment=comment)
+    except Exception as exc:  # noqa: BLE001 - an observability outage must never crash the caller
+        log_action(
+            agent_name=agent_name,
+            action_type="score_failed",
+            input_summary=f"Attempted to record Langfuse score '{name}'",
+            output_summary="Continuing without recording this score.",
+            lead_id=None,
+            client_id=client_id,
+            model_used="rule-based",
+            latency_ms=0,
+            extra_fields={"error_type": type(exc).__name__, "error_message": str(exc)},
+        )

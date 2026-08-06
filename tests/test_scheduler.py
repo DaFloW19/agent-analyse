@@ -5,6 +5,7 @@ import common.llm as llm_module
 from agents.analyst.scheduler import (
     build_weekly_optimisation_report,
     run_anomaly_watch_job,
+    run_conversion_api_job,
     run_weekly_report_job,
 )
 
@@ -150,3 +151,36 @@ def test_run_anomaly_watch_job_sends_when_alerts_fire(monkeypatch):
     asyncio.run(run_anomaly_watch_job(_fake_send))
 
     assert "New to MQL" in sent["text"]
+
+
+def test_run_conversion_api_job_calls_the_conversion_api_push_job(monkeypatch):
+    calls = {}
+
+    def fake_push(dataset, client_id):
+        calls["client_id"] = client_id
+        return {"pushed": [], "excluded_no_click_id": 0, "dry_run": True, "client_id": client_id}
+
+    monkeypatch.setattr(scheduler_module.conversion_api, "run_conversion_api_push_job", fake_push)
+
+    asyncio.run(run_conversion_api_job(client_id="test-conversion-job"))
+
+    assert calls["client_id"] == "test-conversion-job"
+
+
+def test_weekly_report_runs_the_c6_eval_job_on_the_generated_summary(monkeypatch):
+    eval_calls = {}
+
+    def fake_eval(summary_text, source_figures, client_id):
+        eval_calls["summary_text"] = summary_text
+        eval_calls["source_figures"] = source_figures
+        eval_calls["client_id"] = client_id
+        return {"score": 1.0}
+
+    monkeypatch.setattr(scheduler_module, "run_weekly_eval_job", fake_eval)
+    monkeypatch.setattr(llm_module.settings, "DEEPSEEK_API_KEY", "sk-test", raising=False)
+    monkeypatch.setattr(llm_module, "generate_text", lambda **kwargs: "Résumé de test généré.")
+
+    build_weekly_optimisation_report()
+
+    assert eval_calls["summary_text"] == "Résumé de test généré."
+    assert "roas" in eval_calls["source_figures"]

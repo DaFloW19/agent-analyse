@@ -7,7 +7,11 @@ from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any
 
+from agents.analyst.ab_test_conclusions import evaluate_ab_tests
 from agents.analyst.agent import AnalystAgent
+from agents.analyst.cohort_analysis import cohort_breakdown
+from agents.analyst.conversion_api import build_conversion_api_payload
+from agents.analyst.predictive_roas import project_roas
 from agents.analyst.reporting import (
     attach_week_over_week,
     build_phase_a_alerts,
@@ -18,6 +22,8 @@ from agents.analyst.reporting import (
 )
 from agents.analyst.scheduler import build_weekly_optimisation_report
 from agents.analyst.schemas import KnownAgentName, ObservationRequest
+from agents.analyst.scoring_feedback import build_calibration_proposals
+from agents.analyst.seed_data import load_seed_dataset
 from common.logging import log_action
 from common.tracing import traced_action
 from config.settings import settings
@@ -204,6 +210,56 @@ def handle_text_command(
         ):
             return build_weekly_optimisation_report(active_client_id)
 
+    if command == "/predictive_roas":
+        with traced_action(
+            agent_name="analyst",
+            client_id=active_client_id,
+            phase="phase_c_predictive_roas",
+            model_used="rule-based",
+        ):
+            result = project_roas(load_seed_dataset(), client_id=active_client_id)
+            return format_predictive_roas_for_telegram(result)
+
+    if command == "/cohorts":
+        with traced_action(
+            agent_name="analyst",
+            client_id=active_client_id,
+            phase="phase_c_cohorts",
+            model_used="rule-based",
+        ):
+            result = cohort_breakdown(load_seed_dataset(), group_by="campaign")
+            return format_cohorts_for_telegram(result)
+
+    if command == "/conversion_api":
+        with traced_action(
+            agent_name="analyst",
+            client_id=active_client_id,
+            phase="phase_c_conversion_api",
+            model_used="rule-based",
+        ):
+            result = build_conversion_api_payload(load_seed_dataset(), client_id=active_client_id)
+            return format_conversion_api_for_telegram(result)
+
+    if command == "/scoring_feedback":
+        with traced_action(
+            agent_name="analyst",
+            client_id=active_client_id,
+            phase="phase_c_scoring_feedback",
+            model_used="rule-based",
+        ):
+            proposals = build_calibration_proposals(load_seed_dataset())
+            return format_scoring_feedback_for_telegram(proposals)
+
+    if command == "/ab_tests":
+        with traced_action(
+            agent_name="analyst",
+            client_id=active_client_id,
+            phase="phase_c_ab_tests",
+            model_used="rule-based",
+        ):
+            results = evaluate_ab_tests(load_seed_dataset())
+            return format_ab_tests_for_telegram(results)
+
     if command.startswith("/observe"):
         parsed = parse_observe_command(command)
         request = ObservationRequest(
@@ -279,6 +335,125 @@ def format_health_check() -> str:
     )
 
 
+def format_predictive_roas_for_telegram(result: dict) -> str:
+    """Format the C2 predictive ROAS projection as a French Telegram message."""
+
+    if not result["sufficient_data"]:
+        return (
+            "📈 ROAS prédictif - Agent Analyst\n\n"
+            f"⚠️ Données insuffisantes : seulement {result['pipeline_volume']} lead(s) SQL "
+            "dans le pipeline -- pas assez de volume pour une projection fiable."
+        )
+
+    lines = [
+        "📈 ROAS prédictif - Agent Analyst",
+        "",
+        f"💰 Revenu projeté ({result['days']} jours) : "
+        f"{result['projected_revenue_low']:.2f} - {result['projected_revenue_high']:.2f}",
+        "",
+        "Hypothèses :",
+    ]
+    lines.extend(f"- {assumption}" for assumption in result["assumptions"])
+    return "\n".join(lines)
+
+
+def format_cohorts_for_telegram(result: dict) -> str:
+    """Format the C3 cohort breakdown as a French Telegram message."""
+
+    lines = [
+        "👥 Analyse de cohortes - Agent Analyst",
+        f"Regroupement : {result['group_by']}",
+        "",
+    ]
+    if result["ranked"]:
+        lines.append("Classement (par taux de closed-won) :")
+        for position, key in enumerate(result["ranked"], start=1):
+            cohort = result["cohorts"][key]
+            lines.append(
+                f"{position}. {key} : {cohort['closed_won_rate_pct']:.2f}% closed-won "
+                f"({cohort['lead_count']} leads, {cohort['sql_rate_pct']:.2f}% SQL)"
+            )
+    else:
+        lines.append("Aucune cohorte n'a assez de volume pour être classée.")
+
+    if result["insufficient"]:
+        insufficient_list = ", ".join(result["insufficient"])
+        lines.append("")
+        lines.append(f"⚠️ Cohortes insuffisantes (< seuil de volume) : {insufficient_list}")
+
+    return "\n".join(lines)
+
+
+def format_conversion_api_for_telegram(result: dict) -> str:
+    """Format the C1 Conversion API payload preview as a French Telegram message."""
+
+    return (
+        "🔄 Aperçu Conversion API - Agent Analyst\n\n"
+        f"✅ {len(result['pushed'])} deal(s) prêt(s) à pousser vers Meta/Google\n"
+        f"⚠️ {result['excluded_no_click_id']} deal(s) exclu(s) -- pas de click_id\n\n"
+        "🧪 Mode dry-run : rien n'est réellement envoyé. L'endpoint réel de Media Buyer "
+        "(/capi/push-conversion) attend un email+pixel_id, pas un click_id -- voir les "
+        "limitations connues du README."
+    )
+
+
+SCORING_DIRECTION_LABELS = {"decrease": "diminuer", "increase": "augmenter"}
+
+
+def format_scoring_feedback_for_telegram(proposals: list[dict]) -> str:
+    """Format the C4 scoring calibration proposals as a French Telegram message."""
+
+    if not proposals:
+        return (
+            "🎯 Feedback de scoring - Agent Analyst\n\n"
+            "Aucune proposition de recalibrage cette semaine."
+        )
+
+    lines = ["🎯 Feedback de scoring - Agent Analyst", ""]
+    for proposal in proposals:
+        evidence = proposal["evidence"]
+        direction = SCORING_DIRECTION_LABELS.get(
+            proposal["suggested_direction"], proposal["suggested_direction"]
+        )
+        lines.extend(
+            [
+                f"⚠️ Proposition : {proposal['dimension']}",
+                f"- Poids actuel : {proposal['current_weight']}",
+                f"- Score moyen (deals gagnés) : {evidence['avg_score_closed_won']} "
+                f"(n={evidence['sample_size_closed_won']})",
+                f"- Score moyen (autres) : {evidence['avg_score_other']} "
+                f"(n={evidence['sample_size_other']})",
+                f"- Suggestion : {direction} ce poids -- le plus élevé, "
+                "mais le moins corrélé au résultat réel",
+                "",
+            ]
+        )
+    return "\n".join(lines).strip()
+
+
+def format_ab_tests_for_telegram(results: list[dict]) -> str:
+    """Format the C5 A/B test conclusions as a French Telegram message."""
+
+    lines = ["🧪 Conclusions des tests A/B - Agent Analyst", ""]
+    for result in results:
+        if result["status"] == "winner":
+            lines.append(
+                f"🏆 {result['variant_group_id']} : gagnant = {result['winner_asset_id']} "
+                f"(variante {result['winner_variant']}), p={result['p_value']:.4f}"
+            )
+        elif result["status"] == "no_winner":
+            lines.append(
+                f"➡️ {result['variant_group_id']} : pas de gagnant clair "
+                "(différence non significative à 95%)"
+            )
+        else:
+            lines.append(
+                f"⚠️ {result['variant_group_id']} : données insuffisantes "
+                "(< 30 conversions par variante)"
+            )
+    return "\n".join(lines)
+
+
 def build_help_message() -> str:
     """Build the Telegram welcome/help message.
 
@@ -287,7 +462,7 @@ def build_help_message() -> str:
     """
 
     return (
-        "Analyst Agent Phase B is active.\n\n"
+        "Analyst Agent Phase C is active.\n\n"
         "Commands:\n"
         "/start - Show this message\n"
         "/help - Show this message\n"
@@ -297,6 +472,11 @@ def build_help_message() -> str:
         "/alerts - Check conversion drops above 50%\n"
         "/optimisation_report - Preview the weekly scale/pause/rewrite recommendations "
         "(normally sent automatically every Monday)\n"
+        "/predictive_roas - Project expected revenue over the next 30 days (C2)\n"
+        "/cohorts - Break lead quality down by campaign cohort (C3)\n"
+        "/conversion_api - Preview the weekly Conversion API payload, dry-run only (C1)\n"
+        "/scoring_feedback - Show scoring-dimension recalibration proposals (C4)\n"
+        "/ab_tests - Show A/B test winner conclusions (C5)\n"
         "/observe <agent_name> - Observe one agent\n"
         "/observe <agent_name> <task_type> key=value - Observe a specific task\n\n"
         "Agents:\n"
